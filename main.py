@@ -5,7 +5,7 @@ import sys
 import subprocess
 from packaging import version
 
-# Disable Streamlit's file watcher to prevent PyTorch conflicts
+# Disable Streamlit's file watcher to prevent conflicts
 os.environ["STREAMLIT_SERVER_ENABLE_FILE_WATCHER"] = "false"
 
 # ====================
@@ -15,7 +15,8 @@ def install_packages():
     required = {
         'streamlit': '1.22.0',
         'transformers': '4.26.0',
-        'torch': '1.13.0'
+        'torch': '1.13.0',
+        'packaging': '21.0'
     }
     
     try:
@@ -45,7 +46,6 @@ install_packages()
 try:
     from transformers import GPT2LMHeadModel, GPT2Tokenizer
     import torch
-    # Initialize torch in a way that prevents Streamlit watcher conflicts
     torch.utils._disable_streamlit_watcher = True
 except ImportError as e:
     st.error(f"Failed to import required packages: {str(e)}")
@@ -125,7 +125,7 @@ st.markdown("""
 # ====================
 # Model Loading
 # ====================
-@st.cache_resource(show_spinner=False)  # Disable spinner to prevent watcher issues
+@st.cache_resource(show_spinner=False)
 def load_models():
     models = {
         "flirt": {"model": None, "tokenizer": None},
@@ -133,37 +133,43 @@ def load_models():
     }
     
     try:
-        # Load normal model first
+        # Load normal model
         with st.spinner("Loading normal model..."):
             models["normal"]["tokenizer"] = GPT2Tokenizer.from_pretrained("gpt2")
             models["normal"]["model"] = GPT2LMHeadModel.from_pretrained("gpt2")
-        
-        # Try loading custom flirt model
+
+        # Load flirt model from HuggingFace Hub
         with st.spinner("Loading flirt model..."):
             try:
-                models["flirt"]["tokenizer"] = GPT2Tokenizer.from_pretrained("ross-dev/sexyGPT-Uncensored")
-                models["flirt"]["model"] = GPT2LMHeadModel.from_pretrained("ross-dev/sexyGPT-Uncensored")
-            except Exception:
+                flirt_repo = "ross-dev/sexyGPT-Uncensored"
+                models["flirt"]["tokenizer"] = GPT2Tokenizer.from_pretrained(flirt_repo)
+                models["flirt"]["model"] = GPT2LMHeadModel.from_pretrained(flirt_repo)
+            except Exception as e:
+                st.warning(f"Couldn't load flirt model, using normal model instead: {str(e)}")
                 models["flirt"] = models["normal"]
-        
-        # Move to device
+
+        # Move models to device
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         for mode in models:
-            models[mode]["model"].to(device)
-            models[mode]["model"].eval()
-            
+            if models[mode]["model"] is not None:
+                models[mode]["model"].to(device)
+                models[mode]["model"].eval()
+            else:
+                st.error(f"Model {mode} failed to load")
+                return None, None
+        
         return models, device
         
     except Exception as e:
         st.error(f"Model loading failed: {str(e)}")
         return None, None
 
-# Initialize models with error handling
-try:
-    models, device = load_models()
-except Exception as e:
-    st.error(f"Initialization error: {str(e)}")
-    st.stop()
+# Initialize models
+if 'models' not in st.session_state or 'device' not in st.session_state:
+    st.session_state.models, st.session_state.device = load_models()
+    if st.session_state.models is None:
+        st.error("Failed to initialize models. Please check the logs.")
+        st.stop()
 
 # ====================
 # Chat System
@@ -229,7 +235,8 @@ with st.form("chat_form"):
     
     submitted = st.form_submit_button("Send 🌶️")
     
-    if submitted and prompt and models:
+    if submitted and prompt and st.session_state.models:
+        # Add user message
         st.session_state.chat["messages"].append({
             "role": "user",
             "content": prompt
@@ -238,12 +245,14 @@ with st.form("chat_form"):
         current_mode = st.session_state.chat["mode"]
         with st.spinner("🔥 Sally is getting hot..." if current_mode == "flirt" else "🌸 Sally is thinking..."):
             try:
-                inputs = models[current_mode]["tokenizer"].encode(
+                # Encode input
+                inputs = st.session_state.models[current_mode]["tokenizer"].encode(
                     prompt,
                     return_tensors="pt"
-                ).to(device)
+                ).to(st.session_state.device)
                 
-                outputs = models[current_mode]["model"].generate(
+                # Generate response
+                outputs = st.session_state.models[current_mode]["model"].generate(
                     inputs,
                     max_length=200,
                     num_return_sequences=1,
@@ -251,17 +260,20 @@ with st.form("chat_form"):
                     top_k=50,
                     top_p=0.9,
                     repetition_penalty=1.2,
-                    pad_token_id=models[current_mode]["tokenizer"].eos_token_id
+                    pad_token_id=st.session_state.models[current_mode]["tokenizer"].eos_token_id
                 )
                 
-                response = models[current_mode]["tokenizer"].decode(
+                # Decode and clean response
+                response = st.session_state.models[current_mode]["tokenizer"].decode(
                     outputs[0],
                     skip_special_tokens=True
                 ).replace(prompt, "").strip()
                 
+                # Limit to 200 words
                 words = response.split()[:200]
                 response = ' '.join(words)
                 
+                # Add flirty ending if in flirt mode
                 if current_mode == "flirt":
                     if not response.endswith(('?', '!', '.')):
                         response += "..."
@@ -270,6 +282,7 @@ with st.form("chat_form"):
             except Exception as e:
                 response = f"⚠️ Error: {str(e)}"
         
+        # Add bot response
         st.session_state.chat["messages"].append({
             "role": "assistant",
             "content": response,
@@ -278,8 +291,25 @@ with st.form("chat_form"):
         
         st.rerun()
 
-# Clear chat
+# Clear chat button
 if st.session_state.chat["messages"]:
     if st.button("🧹 Clear Chat", use_container_width=True):
         st.session_state.chat["messages"] = []
         st.rerun()
+
+# Add JavaScript to highlight active mode button
+st.markdown(f"""
+<script>
+document.addEventListener('DOMContentLoaded', function() {{
+    const currentMode = "{current_mode}";
+    const buttons = {{
+        'flirt': document.querySelector('[data-testid="baseButton-secondary"]'),
+        'normal': document.querySelector('[data-testid="baseButton-primary"]')
+    }};
+    
+    if (buttons[currentMode]) {{
+        buttons[currentMode].classList.add('active-mode');
+    }}
+}});
+</script>
+""", unsafe_allow_html=True)
