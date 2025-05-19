@@ -1,17 +1,19 @@
 # filename: sexy_sally_chatbot.py
-import streamlit as st
 import os
 import sys
 import subprocess
 from packaging import version
 
-# Disable Streamlit's file watcher to prevent conflicts
-os.environ["STREAMLIT_SERVER_ENABLE_FILE_WATCHER"] = "false"
+# ====================
+# Environment Setup
+# ====================
+os.environ["STREAMLIT_SERVER_ENABLE_FILE_WATCHER"] = "false"  # Disable file watcher
 
 # ====================
 # Package Installation
 # ====================
 def install_packages():
+    """Install required packages if missing or outdated"""
     required = {
         'streamlit': '1.22.0',
         'transformers': '4.26.0',
@@ -20,36 +22,65 @@ def install_packages():
     }
     
     try:
-        import pkg_resources
-        installed = {}
-        for pkg in pkg_resources.working_set:
-            installed[pkg.key] = pkg.version
-        
-        missing = []
-        for pkg, req_version in required.items():
-            if pkg not in installed or version.parse(installed[pkg]) < version.parse(req_version):
+        from importlib.metadata import version as get_version
+    except ImportError:
+        from pkg_resources import get_distribution as get_version
+
+    # Check installed versions
+    missing = []
+    for pkg, req_ver in required.items():
+        try:
+            installed_ver = get_version(pkg)
+            if version.parse(installed_ver) < version.parse(req_ver):
                 missing.append(pkg)
-        
-        if missing:
-            python = sys.executable
-            subprocess.check_call([python, '-m', 'pip', 'install', *missing, '--upgrade'])
-            
-    except Exception as e:
-        st.error(f"Package installation failed: {str(e)}")
-        st.stop()
+        except Exception:
+            missing.append(pkg)
+
+    # Install missing packages
+    if missing:
+        subprocess.check_call([
+            sys.executable, 
+            "-m", "pip", "install", 
+            *[f"{pkg}>={required[pkg]}" for pkg in missing]
+        ], stdout=subprocess.DEVNULL)
 
 install_packages()
 
 # ====================
+# Streamlit Watcher Patch
+# ====================
+def patch_streamlit_watcher():
+    """Monkey-patch Streamlit's module path detector"""
+    try:
+        from streamlit.watcher import local_sources_watcher
+        original_extract = local_sources_watcher.extract_paths
+
+        def patched_extract(module):
+            if not hasattr(module, '__path__'):
+                return []
+            path_obj = module.__path__
+            if isinstance(path_obj, list):
+                return path_obj
+            return list(getattr(path_obj, '_path', []))
+
+        local_sources_watcher.extract_paths = patched_extract
+    except Exception as e:
+        print(f"Watcher patch failed: {e}", file=sys.stderr)
+
+patch_streamlit_watcher()
+
+# ====================
 # Main Imports
 # ====================
-try:
-    from transformers import GPT2LMHeadModel, GPT2Tokenizer
-    import torch
-    torch.utils._disable_streamlit_watcher = True
-except ImportError as e:
-    st.error(f"Failed to import required packages: {str(e)}")
-    st.stop()
+import streamlit as st
+from transformers import GPT2LMHeadModel, GPT2Tokenizer
+import torch
+
+# ====================
+# Torch Classes Workaround
+# ====================
+if hasattr(torch, 'classes'):
+    torch.classes.__path__ = []  # Prevent attribute probing errors
 
 # ====================
 # UI Configuration
@@ -138,12 +169,11 @@ def load_models():
             models["normal"]["tokenizer"] = GPT2Tokenizer.from_pretrained("gpt2")
             models["normal"]["model"] = GPT2LMHeadModel.from_pretrained("gpt2")
 
-        # Load flirt model from HuggingFace Hub
+        # Load flirt model
         with st.spinner("Loading flirt model..."):
             try:
-                flirt_repo = "ross-dev/sexyGPT-Uncensored"
-                models["flirt"]["tokenizer"] = GPT2Tokenizer.from_pretrained(flirt_repo)
-                models["flirt"]["model"] = GPT2LMHeadModel.from_pretrained(flirt_repo)
+                models["flirt"]["tokenizer"] = GPT2Tokenizer.from_pretrained("ross-dev/sexyGPT-Uncensored")
+                models["flirt"]["model"] = GPT2LMHeadModel.from_pretrained("ross-dev/sexyGPT-Uncensored")
             except Exception as e:
                 st.warning(f"Couldn't load flirt model, using normal model instead: {str(e)}")
                 models["flirt"] = models["normal"]
@@ -154,9 +184,6 @@ def load_models():
             if models[mode]["model"] is not None:
                 models[mode]["model"].to(device)
                 models[mode]["model"].eval()
-            else:
-                st.error(f"Model {mode} failed to load")
-                return None, None
         
         return models, device
         
@@ -168,7 +195,6 @@ def load_models():
 if 'models' not in st.session_state or 'device' not in st.session_state:
     st.session_state.models, st.session_state.device = load_models()
     if st.session_state.models is None:
-        st.error("Failed to initialize models. Please check the logs.")
         st.stop()
 
 # ====================
