@@ -29,8 +29,8 @@ def load_models():
         try:
             # Try to load a flirt-style model if available
             # Replace "ross-dev/sexyGPT-Uncensored" with your actual model path if you have one
-            models["flirt"]["tokenizer"] = GPT2Tokenizer.from_pretrained("gpt2")
-            models["flirt"]["model"] = GPT2LMHeadModel.from_pretrained("gpt2")
+            models["flirt"]["tokenizer"] = GPT2Tokenizer.from_pretrained("xara2west/gpt2-finetuned-cone")
+            models["flirt"]["model"] = GPT2LMHeadModel.from_pretrained("xara2west/gpt2-finetuned-cone")
         except:
             st.warning("Flirt model not found, using standard GPT-2 for both modes")
             models["flirt"]["tokenizer"] = GPT2Tokenizer.from_pretrained("gpt2")
