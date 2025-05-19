@@ -194,4 +194,91 @@ with st.form("chat_form"):
         "Your message:",
         height=100,
         key="chat_input",
-        placeholder="Type your message here...
+        placeholder="Type your message here...",
+        label_visibility="collapsed"
+    )
+    
+    submitted = st.form_submit_button("Send 🌶️")
+    
+    if submitted and prompt and models:
+        # Add user message
+        st.session_state.chat["messages"].append({
+            "role": "user",
+            "content": prompt
+        })
+        
+        # Generate response
+        current_mode = st.session_state.chat["mode"]
+        with st.spinner("🌸 Sally is thinking..." if current_mode == "normal" else "🔥 Sally is getting hot..."):
+            try:
+                model_data = models[current_mode]
+                tokenizer = model_data["tokenizer"]
+                model = model_data["model"]
+                config = model_data["config"]
+                
+                inputs = tokenizer.encode(
+                    prompt, 
+                    return_tensors="pt"
+                ).to(device)
+                
+                outputs = model.generate(
+                    inputs,
+                    max_length=config["max_length"],
+                    num_return_sequences=1,
+                    temperature=config["temperature"],
+                    top_k=40,
+                    top_p=0.9,
+                    repetition_penalty=1.2,
+                    pad_token_id=tokenizer.eos_token_id
+                )
+                
+                response = tokenizer.decode(
+                    outputs[0], 
+                    skip_special_tokens=True
+                )
+                
+                # Post-processing
+                response = response.replace(prompt, "").strip()
+                words = response.split()[:200]
+                response = ' '.join(words)
+                
+                # Add appropriate ending
+                if current_mode == "flirt":
+                    if not any(response.endswith(p) for p in ('?', '!', '.')):
+                        response += "..."
+                    response += " What do you think about that, hot stuff?"
+                
+            except Exception as e:
+                response = f"⚠️ Error: {str(e)}"
+        
+        # Add bot response
+        st.session_state.chat["messages"].append({
+            "role": "assistant",
+            "content": response,
+            "mode": current_mode
+        })
+        
+        st.rerun()
+
+# Clear chat button
+if st.session_state.chat["messages"]:
+    if st.button("🧹 Clear Chat", use_container_width=True):
+        st.session_state.chat["messages"] = []
+        st.rerun()
+
+# Add JavaScript to style buttons based on active mode
+st.markdown("""
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const currentMode = "%s";
+    const buttons = {
+        'flirt': document.querySelector('[data-testid="baseButton-secondary"]'),
+        'normal': document.querySelector('[data-testid="baseButton-primary"]')
+    };
+    
+    if (buttons[currentMode]) {
+        buttons[currentMode].classList.add('active-mode');
+    }
+});
+</script>
+""" % st.session_state.chat["mode"], unsafe_allow_html=True)
