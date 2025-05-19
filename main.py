@@ -141,8 +141,8 @@ def load_models():
         # Try loading custom flirt model
         with st.spinner("Loading flirt model..."):
             try:
-                models["flirt"]["tokenizer"] = GPT2Tokenizer.from_pretrained("gpt2")
-                models["flirt"]["model"] = GPT2LMHeadModel.from_pretrained("gpt2")
+                models["flirt"]["tokenizer"] = GPT2Tokenizer.from_pretrained("ross-dev/sexyGPT-Uncensored")
+                models["flirt"]["model"] = GPT2LMHeadModel.from_pretrained("ross-dev/sexyGPT-Uncensored")
             except Exception:
                 models["flirt"] = models["normal"]
         
