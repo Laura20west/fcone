@@ -25,12 +25,13 @@ def load_models():
     }
     
     try:
-        # Load flirt model
-        flirt_path = "https://huggingface.co/ross-dev/sexyGPT-Uncensored"
-        if os.path.exists(flirt_path):
-            models["flirt"]["tokenizer"] = GPT2Tokenizer.from_pretrained(flirt_path)
-            models["flirt"]["model"] = GPT2LMHeadModel.from_pretrained(flirt_path)
-        else:
+        # Load flirt model - using standard GPT-2 as fallback
+        try:
+            # Try to load a flirt-style model if available
+            # Replace "ross-dev/sexyGPT-Uncensored" with your actual model path if you have one
+            models["flirt"]["tokenizer"] = GPT2Tokenizer.from_pretrained("gpt2")
+            models["flirt"]["model"] = GPT2LMHeadModel.from_pretrained("gpt2")
+        except:
             st.warning("Flirt model not found, using standard GPT-2 for both modes")
             models["flirt"]["tokenizer"] = GPT2Tokenizer.from_pretrained("gpt2")
             models["flirt"]["model"] = GPT2LMHeadModel.from_pretrained("gpt2")
@@ -42,8 +43,9 @@ def load_models():
         # Move models to device
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         for mode in models:
-            models[mode]["model"].to(device)
-            models[mode]["model"].eval()
+            if models[mode]["model"] is not None:
+                models[mode]["model"].to(device)
+                models[mode]["model"].eval()
             
         return models, device
         
