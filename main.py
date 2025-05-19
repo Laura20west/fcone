@@ -1,6 +1,6 @@
 # filename: sexy_sally_chatbot.py
 import streamlit as st
-from transformers import GPT2LMHeadModel, GPT2Tokenizer
+from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
 import os
 
@@ -19,33 +19,35 @@ st.set_page_config(
 # ====================
 @st.cache_resource
 def load_models():
-    models = {
-        "flirt": {"model": None, "tokenizer": None},
-        "normal": {"model": None, "tokenizer": None}
+    model_config = {
+        "flirt": {
+            "model_name": "xara2west/gpt2-finetuned-cone",
+            "temperature": 0.9,
+            "max_length": 200
+        },
+        "normal": {
+            "model_name": "gpt2",
+            "temperature": 0.7,
+            "max_length": 150
+        }
     }
     
     try:
-        # Load flirt model - using standard GPT-2 as fallback
-        try:
-            # Try to load a flirt-style model if available
-            # Replace "ross-dev/sexyGPT-Uncensored" with your actual model path if you have one
-            models["flirt"]["tokenizer"] = GPT2Tokenizer.from_pretrained("xara2west/gpt2-finetuned-cone")
-            models["flirt"]["model"] = GPT2LMHeadModel.from_pretrained("xara2west/gpt2-finetuned-cone")
-        except:
-            st.warning("Flirt model not found, using standard GPT-2 for both modes")
-            models["flirt"]["tokenizer"] = GPT2Tokenizer.from_pretrained("gpt2")
-            models["flirt"]["model"] = GPT2LMHeadModel.from_pretrained("gpt2")
-        
-        # Load normal model
-        models["normal"]["tokenizer"] = GPT2Tokenizer.from_pretrained("gpt2")
-        models["normal"]["model"] = GPT2LMHeadModel.from_pretrained("gpt2")
-        
-        # Move models to device
+        models = {}
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        for mode in models:
-            if models[mode]["model"] is not None:
-                models[mode]["model"].to(device)
-                models[mode]["model"].eval()
+        
+        for mode, config in model_config.items():
+            tokenizer = AutoTokenizer.from_pretrained(config["model_name"])
+            model = AutoModelForCausalLM.from_pretrained(config["model_name"])
+            
+            model.to(device)
+            model.eval()
+            
+            models[mode] = {
+                "tokenizer": tokenizer,
+                "model": model,
+                "config": config
+            }
             
         return models, device
         
@@ -192,86 +194,4 @@ with st.form("chat_form"):
         "Your message:",
         height=100,
         key="chat_input",
-        placeholder="Type your message here...",
-        label_visibility="collapsed"
-    )
-    
-    submitted = st.form_submit_button("Send 🌶️")
-    
-    if submitted and prompt and models:
-        # Add user message
-        st.session_state.chat["messages"].append({
-            "role": "user",
-            "content": prompt
-        })
-        
-        # Generate response
-        current_mode = st.session_state.chat["mode"]
-        with st.spinner("🌸 Sally is thinking..." if current_mode == "normal" else "🔥 Sally is getting hot..."):
-            try:
-                inputs = models[current_mode]["tokenizer"].encode(
-                    prompt, 
-                    return_tensors="pt"
-                ).to(device)
-                
-                outputs = models[current_mode]["model"].generate(
-                    inputs,
-                    max_length=200,
-                    num_return_sequences=1,
-                    temperature=0.7 if current_mode == "normal" else 0.9,
-                    top_k=40,
-                    top_p=0.9,
-                    repetition_penalty=1.2,
-                    pad_token_id=models[current_mode]["tokenizer"].eos_token_id
-                )
-                
-                response = models[current_mode]["tokenizer"].decode(
-                    outputs[0], 
-                    skip_special_tokens=True
-                )
-                
-                # Post-processing
-                response = response.replace(prompt, "").strip()
-                words = response.split()[:200]
-                response = ' '.join(words)
-                
-                # Add appropriate ending
-                if current_mode == "flirt":
-                    if not any(response.endswith(p) for p in ('?', '!', '.')):
-                        response += "..."
-                    response += " What do you think about that, hot stuff?"
-                
-            except Exception as e:
-                response = f"⚠️ Error: {str(e)}"
-        
-        # Add bot response
-        st.session_state.chat["messages"].append({
-            "role": "assistant",
-            "content": response,
-            "mode": current_mode
-        })
-        
-        st.rerun()
-
-# Clear chat button
-if st.session_state.chat["messages"]:
-    if st.button("🧹 Clear Chat", use_container_width=True):
-        st.session_state.chat["messages"] = []
-        st.rerun()
-
-# Add JavaScript to style buttons based on active mode
-st.markdown("""
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    const currentMode = "%s";
-    const buttons = {
-        'flirt': document.querySelector('[data-testid="baseButton-secondary"]'),
-        'normal': document.querySelector('[data-testid="baseButton-primary"]')
-    };
-    
-    if (buttons[currentMode]) {
-        buttons[currentMode].classList.add('active-mode');
-    }
-});
-</script>
-""" % st.session_state.chat["mode"], unsafe_allow_html=True)
+        placeholder="Type your message here...
