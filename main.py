@@ -60,7 +60,7 @@ st.markdown("""
 <style>
     /* Main background */
     .stApp {
-        background-image: linear-gradient(135deg, #f5f5ff, #fff5f9);
+        background-image: linear-gradient(135deg, #ff66f9, #ff66f9);
     }
     
     /* Chat bubbles */
