@@ -5,6 +5,9 @@ import sys
 import subprocess
 from packaging import version
 
+# Disable Streamlit's file watcher to prevent PyTorch conflicts
+os.environ["STREAMLIT_SERVER_ENABLE_FILE_WATCHER"] = "false"
+
 # ====================
 # Package Installation
 # ====================
@@ -42,6 +45,8 @@ install_packages()
 try:
     from transformers import GPT2LMHeadModel, GPT2Tokenizer
     import torch
+    # Initialize torch in a way that prevents Streamlit watcher conflicts
+    torch.utils._disable_streamlit_watcher = True
 except ImportError as e:
     st.error(f"Failed to import required packages: {str(e)}")
     st.stop()
@@ -120,7 +125,7 @@ st.markdown("""
 # ====================
 # Model Loading
 # ====================
-@st.cache_resource
+@st.cache_resource(show_spinner=False)  # Disable spinner to prevent watcher issues
 def load_models():
     models = {
         "flirt": {"model": None, "tokenizer": None},
@@ -128,16 +133,18 @@ def load_models():
     }
     
     try:
-        # Load normal model
-        models["normal"]["tokenizer"] = GPT2Tokenizer.from_pretrained("gpt2")
-        models["normal"]["model"] = GPT2LMHeadModel.from_pretrained("gpt2")
+        # Load normal model first
+        with st.spinner("Loading normal model..."):
+            models["normal"]["tokenizer"] = GPT2Tokenizer.from_pretrained("gpt2")
+            models["normal"]["model"] = GPT2LMHeadModel.from_pretrained("gpt2")
         
         # Try loading custom flirt model
-        try:
-            models["flirt"]["tokenizer"] = GPT2Tokenizer.from_pretrained("gpt2")
-            models["flirt"]["model"] = GPT2LMHeadModel.from_pretrained("gpt2")
-        except Exception:
-            models["flirt"] = models["normal"]
+        with st.spinner("Loading flirt model..."):
+            try:
+                models["flirt"]["tokenizer"] = GPT2Tokenizer.from_pretrained("gpt2")
+                models["flirt"]["model"] = GPT2LMHeadModel.from_pretrained("gpt2")
+            except Exception:
+                models["flirt"] = models["normal"]
         
         # Move to device
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -151,7 +158,12 @@ def load_models():
         st.error(f"Model loading failed: {str(e)}")
         return None, None
 
-models, device = load_models()
+# Initialize models with error handling
+try:
+    models, device = load_models()
+except Exception as e:
+    st.error(f"Initialization error: {str(e)}")
+    st.stop()
 
 # ====================
 # Chat System
@@ -215,7 +227,7 @@ with st.form("chat_form"):
         label_visibility="collapsed"
     )
     
-    submitted = st.form_submit_button("Send ✉️")
+    submitted = st.form_submit_button("Send 🌶️")
     
     if submitted and prompt and models:
         st.session_state.chat["messages"].append({
