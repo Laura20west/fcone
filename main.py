@@ -26,7 +26,7 @@ def load_models():
             "max_length": 200
         },
         "normal": {
-            "model_name": "meta-llama/Llama-3.2-1B",
+            "model_name": "InnerI/InnerIAI-chat-7b-grok",
             "temperature": 0.7,
             "max_length": 150
         }
@@ -216,8 +216,14 @@ with st.form("chat_form"):
                 model = model_data["model"]
                 config = model_data["config"]
                 
+                # Format the prompt differently for InnerIAI model
+                if current_mode == "normal":
+                    formatted_prompt = f"User: {prompt}\nAssistant:"
+                else:
+                    formatted_prompt = prompt
+                
                 inputs = tokenizer.encode(
-                    prompt, 
+                    formatted_prompt, 
                     return_tensors="pt"
                 ).to(device)
                 
@@ -238,7 +244,13 @@ with st.form("chat_form"):
                 )
                 
                 # Post-processing
-                response = response.replace(prompt, "").strip()
+                if current_mode == "normal":
+                    # Remove the prompt part and keep only the assistant's response
+                    response = response.replace(formatted_prompt, "").strip()
+                else:
+                    response = response.replace(prompt, "").strip()
+                
+                # Limit response length
                 words = response.split()[:200]
                 response = ' '.join(words)
                 
