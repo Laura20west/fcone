@@ -21,7 +21,7 @@ st.set_page_config(
 def load_models():
     model_config = {
         "flirt": {
-            "model_name": "ross-dev/sexyGPT-Uncensored",
+            "model_name": "Xara2west/gpt2-finetuned-cone",
             "temperature": 0.9,
             "max_length": 200,
             "model_type": "causal"
@@ -236,7 +236,7 @@ with st.form("chat_form"):
                     )
                     response = tokenizer.decode(outputs[0], skip_special_tokens=True)
                 else:
-                    # Causal LM processing (sexyGPT)
+                    # Causal LM processing (Xara2west/gpt2-finetuned-cone)
                     inputs = tokenizer.encode(prompt, return_tensors="pt").to(device)
                     outputs = model.generate(
                         inputs,
