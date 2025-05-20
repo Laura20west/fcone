@@ -23,14 +23,12 @@ def load_models():
         "flirt": {
             "model_name": "xara2west/gpt2-finetuned-cone",
             "temperature": 0.9,
-            "max_length": 200,
-            "model_type": "causal"
+            "max_length": 200
         },
         "normal": {
             "model_name": "google/flan-t5-large",
             "temperature": 0.7,
-            "max_length": 150,
-            "model_type": "seq2seq"
+            "max_length": 150
         }
     }
     
