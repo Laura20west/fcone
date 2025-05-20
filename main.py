@@ -1,6 +1,6 @@
 # filename: sexy_sally_chatbot.py
 import streamlit as st
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
 import os
 
@@ -23,14 +23,12 @@ def load_models():
         "flirt": {
             "model_name": "xara2west/gpt2-finetuned-cone",
             "temperature": 0.9,
-            "max_length": 200,
-            "model_type": "causal"
+            "max_length": 200
         },
         "normal": {
-            "model_name": "google/flan-t5-small",
+            "model_name": "meta-llama/Llama-3.2-1B",
             "temperature": 0.7,
-            "max_length": 150,
-            "model_type": "seq2seq"
+            "max_length": 150
         }
     }
     
@@ -40,11 +38,7 @@ def load_models():
         
         for mode, config in model_config.items():
             tokenizer = AutoTokenizer.from_pretrained(config["model_name"])
-            
-            if config["model_type"] == "causal":
-                model = AutoModelForCausalLM.from_pretrained(config["model_name"])
-            else:  # seq2seq
-                model = AutoModelForSeq2SeqLM.from_pretrained(config["model_name"])
+            model = AutoModelForCausalLM.from_pretrained(config["model_name"])
             
             model.to(device)
             model.eval()
@@ -222,54 +216,29 @@ with st.form("chat_form"):
                 model = model_data["model"]
                 config = model_data["config"]
                 
-                if config["model_type"] == "causal":
-                    # GPT-2 style generation
-                    inputs = tokenizer.encode(
-                        prompt, 
-                        return_tensors="pt"
-                    ).to(device)
-                    
-                    outputs = model.generate(
-                        inputs,
-                        max_length=config["max_length"],
-                        num_return_sequences=1,
-                        temperature=config["temperature"],
-                        top_k=40,
-                        top_p=0.9,
-                        repetition_penalty=1.2,
-                        pad_token_id=tokenizer.eos_token_id
-                    )
-                    
-                    response = tokenizer.decode(
-                        outputs[0], 
-                        skip_special_tokens=True
-                    )
-                    
-                    # Post-processing for causal models
-                    response = response.replace(prompt, "").strip()
-                else:
-                    # FLAN-T5 style generation
-                    inputs = tokenizer(
-                        prompt, 
-                        return_tensors="pt"
-                    ).to(device)
-                    
-                    outputs = model.generate(
-                        input_ids=inputs.input_ids,
-                        attention_mask=inputs.attention_mask,
-                        max_length=config["max_length"],
-                        temperature=config["temperature"],
-                        top_k=40,
-                        top_p=0.9,
-                        repetition_penalty=1.2
-                    )
-                    
-                    response = tokenizer.decode(
-                        outputs[0], 
-                        skip_special_tokens=True
-                    )
+                inputs = tokenizer.encode(
+                    prompt, 
+                    return_tensors="pt"
+                ).to(device)
                 
-                # Truncate response
+                outputs = model.generate(
+                    inputs,
+                    max_length=config["max_length"],
+                    num_return_sequences=1,
+                    temperature=config["temperature"],
+                    top_k=40,
+                    top_p=0.9,
+                    repetition_penalty=1.2,
+                    pad_token_id=tokenizer.eos_token_id
+                )
+                
+                response = tokenizer.decode(
+                    outputs[0], 
+                    skip_special_tokens=True
+                )
+                
+                # Post-processing
+                response = response.replace(prompt, "").strip()
                 words = response.split()[:200]
                 response = ' '.join(words)
                 
