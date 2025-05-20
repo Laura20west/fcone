@@ -23,12 +23,14 @@ def load_models():
         "flirt": {
             "model_name": "xara2west/gpt2-finetuned-cone",
             "temperature": 0.9,
-            "max_length": 200
+            "max_length": 200,
+            "model_type": "causal"
         },
         "normal": {
-            "model_name": "google/flan-t5-large",
+            "model_name": "google/flan-t5-small",
             "temperature": 0.7,
-            "max_length": 150
+            "max_length": 150,
+            "model_type": "seq2seq"
         }
     }
     
@@ -243,18 +245,19 @@ with st.form("chat_form"):
                         skip_special_tokens=True
                     )
                     
-                    # Post-processing for causal models
+                    # Post-processing for causal model
                     response = response.replace(prompt, "").strip()
                 else:
                     # FLAN-T5 style generation
-                    input_ids = tokenizer(
+                    inputs = tokenizer(
                         prompt, 
                         return_tensors="pt"
                     ).input_ids.to(device)
                     
                     outputs = model.generate(
-                        input_ids,
+                        inputs,
                         max_length=config["max_length"],
+                        num_return_sequences=1,
                         temperature=config["temperature"],
                         top_k=40,
                         top_p=0.9,
@@ -266,7 +269,7 @@ with st.form("chat_form"):
                         skip_special_tokens=True
                     )
                 
-                # Truncate response
+                # Common post-processing
                 words = response.split()[:200]
                 response = ' '.join(words)
                 
