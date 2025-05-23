@@ -26,7 +26,7 @@ def load_models():
             "max_length": 200
         },
         "normal": {
-            "model_name": "openai-community/gpt2",
+            "model_name": "Xara2west/gpt2-finetuned-cone2",
             "temperature": 0.7,
             "max_length": 150
         }
@@ -64,34 +64,52 @@ st.markdown("""
 <style>
     /* Main background */
     .stApp {
-        background-image: linear-gradient(135deg, #ff66f9, #ff66f9);
+        background: linear-gradient(135deg, #e6f7ff, #b3e0ff) !important;
+        background-attachment: fixed !important;
+        background-size: cover !important;
+    }
+    
+    /* Remove default Streamlit elements */
+    .main > div {
+        padding: 0rem !important;
+    }
+    
+    header[data-testid="stHeader"] {
+        background: transparent !important;
+    }
+    
+    .stChatFloatingInputContainer {
+        background: rgba(255, 255, 255, 0.9) !important;
+        backdrop-filter: blur(5px) !important;
+        border-radius: 15px !important;
+        padding: 1rem !important;
     }
     
     /* Chat bubbles */
     .user-message {
-        background: #ff66b2;
+        background: #80bfff;
         padding: 1rem;
         border-radius: 18px 18px 0 18px;
         margin: 0.8rem 0;
         max-width: 80%;
         margin-left: auto;
-        box-shadow: 2px 2px 6px rgba(0,0,0,0.15);
+        box-shadow: 2px 2px 6px rgba(0,0,0,0.1);
         font-family: 'Arial', sans-serif;
         color: white;
-        border: 1px solid #ff0066;
+        border: 1px solid #4d94ff;
     }
     
     .bot-message {
-        background: #4d79ff;
+        background: #4db8ff;
         padding: 1rem;
         border-radius: 18px 18px 18px 0;
         margin: 0.8rem 0;
         max-width: 80%;
         margin-right: auto;
-        box-shadow: 2px 2px 6px rgba(0,0,0,0.15);
+        box-shadow: 2px 2px 6px rgba(0,0,0,0.1);
         font-family: 'Arial', sans-serif;
         color: white;
-        border: 1px solid #0039e6;
+        border: 1px solid #0073e6;
     }
     
     /* Mode toggle buttons */
@@ -104,7 +122,7 @@ st.markdown("""
     }
     
     .flirt-btn {
-        background: #ff1493 !important;
+        background: #ff80bf !important;
         color: white !important;
         border: none !important;
         border-radius: 20px !important;
@@ -128,13 +146,30 @@ st.markdown("""
     /* Input area */
     .stTextArea textarea {
         border-radius: 12px !important;
-        border: 1px solid #ccc !important;
+        border: 1px solid #99ccff !important;
+        background: rgba(255, 255, 255, 0.9) !important;
     }
     
     /* Send button */
     .stButton>button {
         border-radius: 12px !important;
         padding: 0.5rem 1.5rem !important;
+        background: #4db8ff !important;
+        color: white !important;
+        border: 1px solid #0073e6 !important;
+    }
+    
+    /* Hide default Streamlit elements */
+    .stDeployButton {
+        display: none !important;
+    }
+    
+    #MainMenu {
+        visibility: hidden !important;
+    }
+    
+    footer {
+        visibility: hidden !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -154,12 +189,12 @@ def set_mode(mode):
 
 # Header
 st.markdown("""
-<div style="text-align: center;">
-    <h1 style="color: #4a2040; font-family: 'Arial', sans-serif;">
+<div style="text-align: center; padding: 1rem; background: rgba(255, 255, 255, 0.9); border-radius: 15px; margin-bottom: 1rem;">
+    <h1 style="color: #006699; font-family: 'Arial', sans-serif;">
         {icon} Sally Chatbot {icon}
     </h1>
-    <p style="color: #6b446b;">
-        Your customizable AI companion
+    <p style="color: #4db8ff;">
+        Your AI Dating Companion
     </p>
 </div>
 """.format(icon="🌸" if st.session_state.chat["mode"] == "normal" else "🔥"), 
@@ -198,7 +233,7 @@ with st.form("chat_form"):
         label_visibility="collapsed"
     )
     
-    submitted = st.form_submit_button("Send 🌶️")
+    submitted = st.form_submit_button("Send 🌊")
     
     if submitted and prompt and models:
         # Add user message
@@ -209,7 +244,7 @@ with st.form("chat_form"):
         
         # Generate response
         current_mode = st.session_state.chat["mode"]
-        with st.spinner("🌸 Sally is thinking..." if current_mode == "normal" else "🔥 Sally is getting hot..."):
+        with st.spinner("🌸 Sally is thinking..." if current_mode == "normal" else "🔥 Sally is getting flirty..."):
             try:
                 model_data = models[current_mode]
                 tokenizer = model_data["tokenizer"]
@@ -246,7 +281,7 @@ with st.form("chat_form"):
                 if current_mode == "flirt":
                     if not any(response.endswith(p) for p in ('?', '!', '.')):
                         response += "..."
-                    response += " What do you think about that, hot stuff?"
+                    response += " What do you think about that? 😉"
                 
             except Exception as e:
                 response = f"⚠️ Error: {str(e)}"
