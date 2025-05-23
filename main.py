@@ -61,12 +61,38 @@ models, device = load_models()
 # Enhanced UI Styling
 # ====================
 st.markdown("""
+<meta name="viewport" content="width=1200, initial-scale=1.0">
 <style>
     /* Main background */
     .stApp {
         background: linear-gradient(135deg, #e6f7ff, #b3e0ff) !important;
         background-attachment: fixed !important;
         background-size: cover !important;
+        min-width: 1200px !important;
+    }
+    
+    /* Mobile desktop mode enforcement */
+    @media screen and (max-width: 768px) {
+        .main .block-container {
+            min-width: 1200px !important;
+            max-width: 1200px !important;
+            padding: 2rem 5rem !important;
+        }
+        
+        .stApp {
+            zoom: 0.8 !important;
+            height: 120vh !important;
+        }
+        
+        .stTextArea textarea {
+            font-size: 16px !important;
+            height: 120px !important;
+        }
+        
+        .user-message, .bot-message {
+            font-size: 14px !important;
+            max-width: 70% !important;
+        }
     }
     
     /* Remove default Streamlit elements */
@@ -159,17 +185,9 @@ st.markdown("""
         border: 1px solid #0073e6 !important;
     }
     
-    /* Hide default Streamlit elements */
-    .stDeployButton {
+    /* Hidden elements */
+    .stDeployButton, #MainMenu, footer {
         display: none !important;
-    }
-    
-    #MainMenu {
-        visibility: hidden !important;
-    }
-    
-    footer {
-        visibility: hidden !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -180,11 +198,10 @@ st.markdown("""
 if "chat" not in st.session_state:
     st.session_state.chat = {
         "messages": [],
-        "mode": "normal"  # Default mode
+        "mode": "normal"
     }
 
 def set_mode(mode):
-    """Helper function to set the chat mode"""
     st.session_state.chat["mode"] = mode
 
 # Header
@@ -200,7 +217,7 @@ st.markdown("""
 """.format(icon="🌸" if st.session_state.chat["mode"] == "normal" else "🔥"), 
 unsafe_allow_html=True)
 
-# Chat history display
+# Chat history
 for msg in st.session_state.chat["messages"]:
     if msg["role"] == "user":
         st.markdown(f'<div class="user-message">👤 {msg["content"]}</div>', unsafe_allow_html=True)
@@ -208,20 +225,12 @@ for msg in st.session_state.chat["messages"]:
         icon = "🌸" if msg.get("mode", "normal") == "normal" else "🔥"
         st.markdown(f'<div class="bot-message">{icon} Sally: {msg["content"]}</div>', unsafe_allow_html=True)
 
-# Mode toggle buttons
+# Mode toggle
 cols = st.columns([1,2,2,1])
 with cols[1]:
-    if st.button("💖 Flirt Mode", 
-               key="flirt_btn", 
-               help="Switch to flirty conversation mode",
-               on_click=lambda: set_mode("flirt")):
-        pass
+    st.button("💖 Flirt Mode", key="flirt_btn", on_click=lambda: set_mode("flirt"))
 with cols[2]:
-    if st.button("💬 Normal Mode", 
-               key="normal_btn",
-               help="Switch to normal conversation mode",
-               on_click=lambda: set_mode("normal")):
-        pass
+    st.button("💬 Normal Mode", key="normal_btn", on_click=lambda: set_mode("normal"))
 
 # Chat input
 with st.form("chat_form"):
@@ -236,84 +245,68 @@ with st.form("chat_form"):
     submitted = st.form_submit_button("Send 🌊")
     
     if submitted and prompt and models:
-        # Add user message
-        st.session_state.chat["messages"].append({
-            "role": "user",
-            "content": prompt
-        })
+        st.session_state.chat["messages"].append({"role": "user", "content": prompt})
         
-        # Generate response
         current_mode = st.session_state.chat["mode"]
         with st.spinner("🌸 Sally is thinking..." if current_mode == "normal" else "🔥 Sally is getting flirty..."):
             try:
                 model_data = models[current_mode]
-                tokenizer = model_data["tokenizer"]
-                model = model_data["model"]
-                config = model_data["config"]
+                inputs = model_data["tokenizer"].encode(prompt, return_tensors="pt").to(device)
                 
-                inputs = tokenizer.encode(
-                    prompt, 
-                    return_tensors="pt"
-                ).to(device)
-                
-                outputs = model.generate(
+                outputs = model_data["model"].generate(
                     inputs,
-                    max_length=config["max_length"],
-                    num_return_sequences=1,
-                    temperature=config["temperature"],
+                    max_length=model_data["config"]["max_length"],
+                    temperature=model_data["config"]["temperature"],
                     top_k=40,
                     top_p=0.9,
                     repetition_penalty=1.2,
-                    pad_token_id=tokenizer.eos_token_id
+                    pad_token_id=model_data["tokenizer"].eos_token_id
                 )
                 
-                response = tokenizer.decode(
-                    outputs[0], 
-                    skip_special_tokens=True
-                )
-                
-                # Post-processing
+                response = model_data["tokenizer"].decode(outputs[0], skip_special_tokens=True)
                 response = response.replace(prompt, "").strip()
-                words = response.split()[:200]
-                response = ' '.join(words)
+                response = ' '.join(response.split()[:200])
                 
-                # Add appropriate ending
-                if current_mode == "flirt":
-                    if not any(response.endswith(p) for p in ('?', '!', '.')):
-                        response += "..."
-                    response += " What do you think about that? 😉"
+                if current_mode == "flirt" and not any(response.endswith(p) for p in ('?', '!', '.')):
+                    response += "... 😉"
                 
             except Exception as e:
                 response = f"⚠️ Error: {str(e)}"
         
-        # Add bot response
         st.session_state.chat["messages"].append({
             "role": "assistant",
             "content": response,
             "mode": current_mode
         })
-        
         st.rerun()
 
-# Clear chat button
+# Clear chat
 if st.session_state.chat["messages"]:
     if st.button("🧹 Clear Chat", use_container_width=True):
         st.session_state.chat["messages"] = []
         st.rerun()
 
-# Add JavaScript to style buttons based on active mode
-st.markdown("""
+# Mobile mode JavaScript
+st.markdown(f"""
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    const currentMode = "%s";
-    const buttons = {
+document.addEventListener('DOMContentLoaded', function() {{
+    const meta = document.createElement('meta');
+    meta.name = 'viewport';
+    meta.content = 'width=1200, initial-scale=1.0, maximum-scale=1.0, user-scalable=0';
+    document.head.appendChild(meta);
+
+    const currentMode = "{st.session_state.chat["mode"]}";
+    const buttons = {{
         'flirt': document.querySelector('[data-testid="baseButton-secondary"]'),
         'normal': document.querySelector('[data-testid="baseButton-primary"]')
-    };
+    }};
     
-    if (buttons[currentMode]) {
-        buttons[currentMode].classList.add('active-mode');
-    }
-});
+    if (buttons[currentMode]) buttons[currentMode].classList.add('active-mode');
+    
+    if(/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {{
+        document.body.style.zoom = "80%";
+        document.querySelector('.stApp').style.height = "120vh";
+    }}
+}});
 </script>
-""" % st.session_state.chat["mode"], unsafe_allow_html=True)
+""", unsafe_allow_html=True)
