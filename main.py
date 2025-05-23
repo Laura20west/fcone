@@ -9,8 +9,8 @@ import time
 # UI Configuration
 # ====================
 st.set_page_config(
-    page_title="🔥 Sally Chatbot",
-    page_icon="🌸",
+    page_title="🔥 Sexy Sally",
+    page_icon="💋",
     layout="centered",
     initial_sidebar_state="collapsed"
 )
@@ -66,7 +66,7 @@ st.markdown("""
 <style>
     /* Main background */
     .stApp {
-        background: linear-gradient(135deg, #e6f7ff, #b3e0ff) !important;
+        background: linear-gradient(135deg, #ffebf3, #ffd6e7) !important;
         background-attachment: fixed !important;
         background-size: cover !important;
         min-width: 1200px !important;
@@ -74,7 +74,8 @@ st.markdown("""
     
     /* Text input color */
     .stTextArea textarea {
-        color: #D891EF !important;
+        color: #ff69b4 !important;
+        font-weight: 500 !important;
     }
     
     /* Response log styling */
@@ -83,10 +84,54 @@ st.markdown("""
         border-radius: 10px;
         padding: 1rem;
         margin-top: 1rem;
+        border: 1px solid #ffb6c1;
     }
     
-    /* Existing styles remain unchanged */
-    /* ... (keep all existing CSS styles) ... */
+    /* Chat bubbles */
+    .user-message {
+        background: #ff85a2;
+        padding: 1rem;
+        border-radius: 18px 18px 0 18px;
+        margin: 0.8rem 0;
+        max-width: 80%;
+        margin-left: auto;
+        box-shadow: 2px 2px 6px rgba(0,0,0,0.1);
+        font-family: 'Arial', sans-serif;
+        color: white;
+        border: 1px solid #ff6b8b;
+    }
+    
+    .bot-message {
+        background: #ff6b8b;
+        padding: 1rem;
+        border-radius: 18px 18px 18px 0;
+        margin: 0.8rem 0;
+        max-width: 80%;
+        margin-right: auto;
+        box-shadow: 2px 2px 6px rgba(0,0,0,0.1);
+        font-family: 'Arial', sans-serif;
+        color: white;
+        border: 1px solid #ff1493;
+    }
+    
+    /* Mode toggle buttons */
+    .flirt-btn {
+        background: #ff1493 !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 20px !important;
+        padding: 0.5rem 1.5rem !important;
+    }
+    
+    .normal-btn {
+        background: #ff6b8b !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 20px !important;
+        padding: 0.5rem 1.5rem !important;
+    }
+    
+    /* Keep other existing styles */
 </style>
 """, unsafe_allow_html=True)
 
@@ -104,52 +149,67 @@ def set_mode(mode):
     st.session_state.chat["mode"] = mode
 
 def build_context(prompt):
-    """Build conversation context from last 3 exchanges"""
-    context = []
-    for msg in st.session_state.chat["messages"][-6:]:  # Last 3 pairs
-        context.append(f"{'User' if msg['role'] == 'user' else 'Assistant'}: {msg['content']}")
+    """Build conversation context with Sally's sexy persona"""
+    persona = """
+    You are Sally, a naughty, sexy woman at the perfect age. You exude confidence and sensual energy. 
+    All men desire you, but you choose who gets to enjoy your company. You're playful, seductive, 
+    and know exactly what you want. You enjoy flirting and teasing, always leaving them wanting more.
+    """
+    
+    if st.session_state.chat["mode"] == "flirt":
+        persona += """
+        [Flirt Mode Activated] You're feeling extra playful tonight. Your words drip with sensual 
+        suggestion and teasing promises. You maintain control while giving just enough to keep them 
+        hooked. Every response should be charged with sexual energy and playful challenge.
+        """
+    
+    context = [persona]
+    for msg in st.session_state.chat["messages"][-6:]:
+        context.append(f"{'User' if msg['role'] == 'user' else 'Sally'}: {msg['content']}")
+    
     context.append(f"User: {prompt}")
+    context.append("Sally: [responds with sensual confidence]")  # Direct response prompt
+    
     return "\n".join(context)
 
-# Header
+# Header with sexy theme
 st.markdown("""
-<div style="text-align: center; padding: 1rem; background: rgba(255, 255, 255, 0.9); border-radius: 15px; margin-bottom: 1rem;">
-    <h1 style="color: #006699; font-family: 'Arial', sans-serif;">
-        {icon} Sally Chatbot {icon}
+<div style="text-align: center; padding: 1rem; background: rgba(255, 255, 255, 0.9); border-radius: 15px; margin-bottom: 1rem; border: 1px solid #ff6b8b;">
+    <h1 style="color: #ff1493; font-family: 'Arial', sans-serif;">
+        💋 Sally - Your Naughty Companion 💋
     </h1>
-    <p style="color: #4db8ff;">
-        Your AI Dating Companion
+    <p style="color: #ff6b8b;">
+        "I know what you want... but do you deserve it?"
     </p>
 </div>
-""".format(icon="🌸" if st.session_state.chat["mode"] == "normal" else "🔥"), 
-unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
 # Chat history
 for msg in st.session_state.chat["messages"]:
     if msg["role"] == "user":
         st.markdown(f'<div class="user-message">👤 {msg["content"]}</div>', unsafe_allow_html=True)
     else:
-        icon = "🌸" if msg.get("mode", "normal") == "normal" else "🔥"
+        icon = "💋" if msg.get("mode", "normal") == "flirt" else "🌸"
         st.markdown(f'<div class="bot-message">{icon} Sally: {msg["content"]}</div>', unsafe_allow_html=True)
 
 # Response log expander
-with st.expander("📜 Response Log"):
+with st.expander("📜 Intimate Thoughts (Response Log)"):
     for msg in st.session_state.chat["messages"]:
         if msg["role"] == "assistant":
             st.markdown(f"""
             <div class="response-log">
-                <strong>ID:</strong> {msg['id']}<br>
+                <strong>Session ID:</strong> {msg['id']}<br>
                 <strong>Mode:</strong> {msg['mode'].title()}<br>
-                <strong>Response:</strong> {msg['content']}
+                <strong>Whispered:</strong> <em>{msg['content']}</em>
             </div>
             """, unsafe_allow_html=True)
 
 # Mode toggle
 cols = st.columns([1,2,2,1])
 with cols[1]:
-    st.button("💖 Flirt Mode", key="flirt_btn", on_click=lambda: set_mode("flirt"))
+    st.button("🔥 Naughty Mode", key="flirt_btn", on_click=lambda: set_mode("flirt"))
 with cols[2]:
-    st.button("💬 Normal Mode", key="normal_btn", on_click=lambda: set_mode("normal"))
+    st.button("💄 Playful Mode", key="normal_btn", on_click=lambda: set_mode("normal"))
 
 # Chat input
 with st.form("chat_form"):
@@ -157,17 +217,17 @@ with st.form("chat_form"):
         "Your message:",
         height=100,
         key="chat_input",
-        placeholder="Type your message here...",
+        placeholder="Tell Sally what's on your mind...",
         label_visibility="collapsed"
     )
     
-    submitted = st.form_submit_button("Send 🌊")
+    submitted = st.form_submit_button("Send 💋")
     
     if submitted and prompt and models:
         st.session_state.chat["messages"].append({"role": "user", "content": prompt})
         
         current_mode = st.session_state.chat["mode"]
-        with st.spinner("🌸 Sally is thinking..." if current_mode == "normal" else "🔥 Sally is getting flirty..."):
+        with st.spinner("💋 Sally is considering your offer..." if current_mode == "flirt" else "🌸 Sally is listening..."):
             try:
                 model_data = models[current_mode]
                 context_prompt = build_context(prompt)
@@ -190,16 +250,18 @@ with st.form("chat_form"):
                 )
                 
                 full_response = model_data["tokenizer"].decode(outputs[0], skip_special_tokens=True)
-                # Extract only the new response
-                response = full_response.split("Assistant:")[-1].strip()
-                response = response.split("User:")[0].strip()  # Prevent including future user inputs
+                response = full_response.split("Sally: [responds with sensual confidence]")[-1].strip()
+                response = response.split("User:")[0].strip()
                 response = ' '.join(response.split()[:200])
                 
-                if current_mode == "flirt" and not any(response.endswith(p) for p in ('?', '!', '.')):
-                    response += "... 😉"
+                # Enhance responses with sensual language
+                if current_mode == "flirt":
+                    response = response.replace(" you ", " you, bad boy, ").replace(" your ", " that delicious ")
+                    if not any(response.endswith(p) for p in ('?', '!', '.')):
+                        response += "... 💋"
                 
                 # Generate unique response ID
-                response_id = f"resp_{int(time.time()*1000)}"
+                response_id = f"sally_{int(time.time()*1000)}"
                 
                 st.session_state.chat["messages"].append({
                     "role": "assistant",
@@ -209,7 +271,7 @@ with st.form("chat_form"):
                 })
                 
             except Exception as e:
-                response = f"⚠️ Error: {str(e)}"
+                response = f"⚠️ Oh darling, something went wrong... {str(e)}"
                 st.session_state.chat["messages"].append({
                     "role": "assistant",
                     "content": response,
@@ -221,7 +283,7 @@ with st.form("chat_form"):
 
 # Clear chat
 if st.session_state.chat["messages"]:
-    if st.button("🧹 Clear Chat", use_container_width=True):
+    if st.button("✨ Start Over", use_container_width=True):
         st.session_state.chat["messages"] = []
         st.rerun()
 
