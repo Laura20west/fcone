@@ -27,7 +27,7 @@ def load_models():
             "max_length": 200
         },
         "normal": {
-            "model_name": "Xara2west/gpt2-finetuned-cone2",
+            "model_name": "google/flan-t5-base",
             "temperature": 0.7,
             "max_length": 150
         }
@@ -252,7 +252,7 @@ with st.form("chat_form"):
                 full_response = model_data["tokenizer"].decode(outputs[0], skip_special_tokens=True)
                 response = full_response.split("Sally: [responds with sensual confidence]")[-1].strip()
                 response = response.split("User:")[0].strip()
-                response = ' '.join(response.split()[:200])
+                response = ' '.join(response.split()[:100])
                 
                 # Enhance responses with sensual language
                 if current_mode == "flirt":
@@ -311,3 +311,4 @@ document.addEventListener('DOMContentLoaded', function() {{
 }});
 </script>
 """, unsafe_allow_html=True)
+        
