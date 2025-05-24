@@ -76,7 +76,28 @@ def main():
     # Custom CSS
     st.markdown("""
     <style>
-        /* Previous styles */
+        .user-message {
+            background: #ff85a2;
+            padding: 1rem;
+            border-radius: 18px 18px 0 18px;
+            margin: 0.8rem 0;
+            max-width: 80%;
+            margin-left: auto;
+            box-shadow: 2px 2px 6px rgba(0,0,0,0.1);
+            color: white;
+            border: 1px solid #ff6b8b;
+        }
+        .bot-message {
+            background: #ff6b8b;
+            padding: 1rem;
+            border-radius: 18px 18px 18px 0;
+            margin: 0.8rem 0;
+            max-width: 80%;
+            margin-right: auto;
+            box-shadow: 2px 2px 6px rgba(0,0,0,0.1);
+            color: white;
+            border: 1px solid #ff1493;
+        }
         .context-pill {
             background: #ff1493;
             color: white;
@@ -113,15 +134,16 @@ def main():
         with col1:
             st.subheader("User Profile")
             if st.session_state.chat["context"]["user_profile"]["name"]:
-                st.markdown(f"**Name:** {st.session_state.chat["context"]["user_profile"]["name"]}")
-            st.markdown(f"**Interests:** {', '.join(st.session_state.chat["context"]["user_profile"]["interests"]) or 'None detected'}")
+                st.markdown(f"**Name:** {st.session_state.chat['context']['user_profile']['name']}")
+            st.markdown(f"**Interests:** {', '.join(st.session_state.chat['context']['user_profile']['interests']) or 'None detected'}")
             
         with col2:
             st.subheader("Conversation State")
-            st.markdown(f"**Mode:** {st.session_state.chat["mode"].title()}")
-            st.markdown(f"**Emotional Tone:** {st.session_state.chat["context"]["emotional_state"]["current'].title()}")
+            st.markdown(f"**Mode:** {st.session_state.chat['mode'].title()}")
+            st.markdown(f"**Emotional Tone:** {st.session_state.chat['context']['emotional_state']['current'].title()}")
             if st.session_state.chat["context"]["temporal_context"]["last_met"]:
-                st.markdown(f"**Last Met:** {st.session_state.chat["context"]["temporal_context"]["last_met"].strftime('%Y-%m-%d %H:%M')}")
+                last_met = st.session_state.chat["context"]["temporal_context"]["last_met"].strftime('%Y-%m-%d %H:%M')
+                st.markdown(f"**Last Met:** {last_met}")
     
     # Chat Interface
     for msg in st.session_state.chat["messages"]:
@@ -297,4 +319,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
+        
