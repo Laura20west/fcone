@@ -1,5 +1,5 @@
 # filename: sexy_sally_chatbot.py
-
+pip install streamlit==1.37.0
 import streamlit as st
 
 from transformers import AutoTokenizer, AutoModelForCausalLM
