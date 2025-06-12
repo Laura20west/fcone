@@ -1,218 +1,282 @@
-# filename: sexy_sally_chatbot.py
 import streamlit as st
-from transformers import AutoTokenizer, AutoModelForCausalLM, T5ForConditionalGeneration
-import torch
-from datetime import datetime
+import json
+import random
+import re
+import numpy as np
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+from transformers import pipeline, AutoModelForSeq2SeqLM, AutoTokenizer
+import os
 
-# ====================
-# Configuration
-# ====================
-MODEL_CONFIG = {
-    "flirt": {
-        "model_name": "gpt2",
-        "temperature": 0.85,
-        "max_length": 200,
-        "max_context": 1024,
-        "model_class": AutoModelForCausalLM,
-        "greeting": "💋 Well hello there, darling... what's on your mind?",
-        "color": "#ff6b8b"
-    },
-    "normal": {
-        "model_name": "google/flan-t5-base",
-        "temperature": 0.7,
-        "max_length": 200,
-        "max_context": 768,
-        "model_class": T5ForConditionalGeneration,
-        "greeting": "🌸 Hello! How can I help you today?",
-        "color": "#69b3a2"
-    }
+# Predefined keyword categories
+CATEGORY_KEYWORDS = {
+    "sex": ["fuck", "cock", "boobs", "pussy", "horny", "sex", "suck", "spank", 
+            "bondage", "threesome", "dick", "orgasm", "fucking", "nude", "naked",
+            "blowjob", "handjob", "anal", "fetish", "kink", "sexy", "erotic", "masturbation"],
+    "cars": ["car", "vehicle", "drive", "driving", "engine", "tire", "race", "speed",
+             "motor", "wheel", "road", "highway", "license", "driver", "automobile"],
+    "age": ["age", "old", "young", "birthday", "years", "aged", "elderly", "youth", 
+            "minor", "teen", "teenager", "adult", "senior", "centenarian"],
+    "hobbies": ["toy", "fun", "hobbies", "game", "play", "playing", "collect", 
+               "activity", "leisure", "pastime", "sport", "craft", "art", "music", "reading"],
+    "relationships": ["date", "dating", "partner", "boyfriend", "girlfriend", 
+                     "marriage", "marry", "crush", "love", "kiss", "romance",
+                     "affection", "commitment", "proposal", "engagement"]
 }
 
-# ====================
-# Model Loading
-# ====================
-@st.cache_resource(show_spinner="Loading AI models...")
-def load_models():
-    """Load all required models and tokenizers with proper configuration"""
+# Load dataset preserving categories and content
+def load_dataset(file_path):
+    if not os.path.exists(file_path):
+        st.error(f"Dataset file not found: {file_path}")
+        return {}
+    
     try:
-        models = {}
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        
-        for mode, config in MODEL_CONFIG.items():
-            with st.spinner(f"Loading {mode} model..."):
-                # Load tokenizer with mode-specific settings
-                tokenizer = AutoTokenizer.from_pretrained(config["model_name"])
-                if mode == "flirt":
-                    tokenizer.pad_token = tokenizer.eos_token
-                
-                # Load correct model class for each mode
-                model = config["model_class"].from_pretrained(config["model_name"])
-                model.to(device).eval()
-                
-                models[mode] = {
-                    **config,
-                    "tokenizer": tokenizer,
-                    "model": model
-                }
-                
-        return models, device
-    
+        with open(file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return data
     except Exception as e:
-        st.error(f"Model loading error: {str(e)}")
-        return None, None
+        st.error(f"Error loading dataset: {str(e)}")
+        return {}
 
-# ====================
-# Core Application
-# ====================
-def main():
-    # Set page config FIRST - Streamlit requirement
-    st.set_page_config(
-        page_title="🔥 Contextual Sally",
-        page_icon="💋",
-        layout="centered",
-        initial_sidebar_state="expanded"
-    )
-
-    # Initialize session state AFTER page config
-    if "chat" not in st.session_state:
-        st.session_state.chat = {
-            "messages": [{
-                "role": "assistant",
-                "content": MODEL_CONFIG["normal"]["greeting"],
-                "mode": "normal"
-            }],
-            "mode": "normal",
-            "context": {
-                "user_profile": {"name": None, "interests": []},
-                "conversation_history": [],
-                "temporal_context": {"last_met": None},
-                "emotional_state": {"current": "neutral", "history": []}
-            }
-        }
-
-    # Load models
-    models, device = load_models()
-    if models is None:
-        st.error("❌ Failed to load models. Please check the error messages above.")
-        st.stop()
-
-    # ====================
-    # UI Components
-    # ====================
-    current_mode = st.session_state.chat["mode"]
-    current_color = MODEL_CONFIG[current_mode]["color"]
+# Initialize models
+@st.cache_resource
+def initialize_models():
+    try:
+        paraphrase_model = pipeline(
+            "text2text-generation",
+            model="tuner007/pegasus_paraphrase",
+            device="cpu"
+        )
+        st.success("Paraphrase model loaded successfully")
+    except Exception as e:
+        st.error(f"Paraphrase model error: {str(e)}")
+        paraphrase_model = None
     
-    # Dynamic CSS based on mode
-    st.markdown(f"""
-    <style>
-        .bot-message {{
-            background: {current_color};
-            border-color: {current_color};
-        }}
-        .stButton button {{
-            background-color: {current_color} !important;
-        }}
-        .mode-pill {{
-            background: {current_color};
-            color: white;
-            border-radius: 20px;
-            padding: 5px 15px;
-            font-weight: bold;
-        }}
-    </style>
-    """, unsafe_allow_html=True)
+    try:
+        qgen_tokenizer = AutoTokenizer.from_pretrained("mrm8488/t5-base-finetuned-question-generation-ap")
+        qgen_model = AutoModelForSeq2SeqLM.from_pretrained("mrm8488/t5-base-finetuned-question-generation-ap")
+        st.success("Question generation model loaded successfully")
+    except Exception as e:
+        st.error(f"Question model error: {str(e)}")
+        qgen_model = None
+        qgen_tokenizer = None
+    
+    return paraphrase_model, qgen_model, qgen_tokenizer
 
-    # Header
-    st.markdown(f"""
-    <div style="text-align: center; padding: 1rem; margin-bottom: 2rem;
-                border-radius: 15px; border: 2px solid {current_color};">
-        <h1 style="color: {current_color};">
-            💋 Context-Aware Sally 💋
-        </h1>
-        <div class="mode-pill">{current_mode.title()} Mode</div>
-    </div>
-    """, unsafe_allow_html=True)
+# Identify relevant categories based on keywords
+def get_relevant_categories(user_input):
+    relevant_categories = set()
+    words = re.findall(r'\w+', user_input.lower())
+    
+    for word in words:
+        for category, keywords in CATEGORY_KEYWORDS.items():
+            if word in keywords:
+                relevant_categories.add(category)
+    
+    return relevant_categories
 
-    # Sidebar with context
-    with st.sidebar:
-        st.header("🧠 Sally's Mind")
-        with st.expander("User Profile"):
-            profile = st.session_state.chat["context"]["user_profile"]
-            st.write(f"**Name:** {profile['name'] or 'Unknown'}")
-            st.write(f"**Interests:** {', '.join(profile['interests']) or 'None'}")
+# Find best match within relevant categories with random selection
+def find_best_match(user_input, dataset, relevant_categories):
+    if not dataset:
+        return None
+    
+    # Get all candidates from relevant categories
+    candidates = []
+    for category in relevant_categories:
+        if category in dataset:
+            category_content = dataset[category]
+            responses = category_content.get('responses', [])
+            questions = category_content.get('questions', [])
             
-        with st.expander("Conversation State"):
-            st.write(f"**Messages:** {len(st.session_state.chat['messages'])}")
-            st.write(f"**Emotion:** {st.session_state.chat['context']['emotional_state']['current'].title()}")
-            st.write(f"**Last Active:** {st.session_state.chat['context']['temporal_context']['last_met'] or 'Never'}")
+            # Add all responses and questions from the category
+            candidates.extend(responses)
+            candidates.extend(questions)
+    
+    # If no candidates from relevant categories, use all categories
+    if not candidates:
+        for category, content in dataset.items():
+            responses = content.get('responses', [])
+            questions = content.get('questions', [])
+            candidates.extend(responses)
+            candidates.extend(questions)
+    
+    # Filter out empty candidates
+    candidates = [c.strip() for c in candidates if c.strip()]
+    
+    if not candidates:
+        return None
+    
+    # If we have many candidates, select a random subset for efficiency
+    max_candidates = 500
+    if len(candidates) > max_candidates:
+        candidates = random.sample(candidates, max_candidates)
+    
+    # Vectorize candidates
+    vectorizer = TfidfVectorizer(stop_words='english')
+    try:
+        tfidf_matrix = vectorizer.fit_transform(candidates)
+    except Exception as e:
+        st.error(f"Vectorization error: {str(e)}")
+        return None
+    
+    # Vectorize user input
+    try:
+        query_vec = vectorizer.transform([user_input])
+    except:
+        return random.choice(candidates)  # Fallback to random selection
+    
+    # Find best matches
+    try:
+        similarities = cosine_similarity(query_vec, tfidf_matrix).flatten()
+        # Get top 5 matches
+        top_indices = similarities.argsort()[-5:][::-1]
+        # Randomly select from top matches
+        selected_index = random.choice(top_indices)
+        return candidates[selected_index]
+    except:
+        return random.choice(candidates)  # Fallback to random selection
 
-    # Chat messages
-    for msg in st.session_state.chat["messages"]:
-        if msg["role"] == "user":
-            st.markdown(f"""
-            <div class="user-message">
-                👤 You: {msg["content"]}
-            </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.markdown(f"""
-            <div class="bot-message">
-                {MODEL_CONFIG[msg['mode']]['greeting'][0]} Sally: {msg["content"]}
-            </div>
-            """, unsafe_allow_html=True)
+# Paraphrase text
+def paraphrase_text(text, model):
+    if not model or not text.strip():
+        return text
+    
+    try:
+        result = model(
+            f"paraphrase: {text}",
+            max_length=60,
+            num_beams=5,
+            num_return_sequences=1,
+            temperature=0.7
+        )
+        return result[0]['generated_text']
+    except Exception as e:
+        st.error(f"Paraphrase error: {str(e)}")
+        return text
 
-    # Mode toggle
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("🔥 Switch to Flirty", disabled=current_mode=="flirt"):
-            st.session_state.chat["mode"] = "flirt"
-            st.rerun()
-    with col2:
-        if st.button("🌸 Switch to Normal", disabled=current_mode=="normal"):
-            st.session_state.chat["mode"] = "normal"
-            st.rerun()
+# Generate follow-up question
+def generate_question(context, model, tokenizer):
+    if not model or not context.strip():
+        return "What are your thoughts on that?"
+    
+    try:
+        inputs = tokenizer(
+            f"generate follow-up question: {context}",
+            return_tensors="pt",
+            max_length=512,
+            truncation=True
+        )
+        outputs = model.generate(
+            inputs.input_ids,
+            max_length=50,
+            num_beams=5,
+            early_stopping=True
+        )
+        return tokenizer.decode(outputs[0], skip_special_tokens=True)
+    except Exception as e:
+        st.error(f"Question generation error: {str(e)}")
+        return "What do you think about that?"
 
-    # ====================
-    # Chat Processing
-    # ====================
-    with st.form("chat-input"):
-        prompt = st.text_input("Your message:", key="user_input")
+# Create fluid response with question
+def create_response(matched_text, paraphrase_model, qgen_model, qgen_tokenizer):
+    # Paraphrase the matched text
+    paraphrased = paraphrase_text(matched_text, paraphrase_model)
+    
+    # Generate follow-up question
+    follow_up = generate_question(matched_text, qgen_model, qgen_tokenizer)
+    
+    # Create seamless connection
+    connectors = [
+        "By the way,", "Actually,", "You know,", "Anyway,",
+        "Speaking of which,", "On that note,", "Curiously,",
+        "Incidentally,", "Interestingly,", "Changing topics slightly,",
+        "That reminds me,", "To shift gears a bit,"
+    ]
+    
+    # Randomly decide connection style
+    if random.random() > 0.4:  # 60% chance to use connector
+        return f"{paraphrased} {random.choice(connectors)} {follow_up}"
+    return f"{paraphrased} {follow_up}"
+
+# Main Streamlit app
+def main():
+    st.title("🤖 Advanced Chatbot")
+    st.write("This chatbot uses NLP models to generate intelligent responses.")
+    
+    # Initialize models and dataset
+    with st.spinner("Loading models and dataset..."):
+        dataset = load_dataset("cone03.txt")
+        paraphrase_model, qgen_model, qgen_tokenizer = initialize_models()
+    
+    # Initialize chat history
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+        st.session_state.conversation_history = []
+        # Add initial greeting
+        st.session_state.messages.append({"role": "assistant", "content": "Hey there! What's on your mind?"})
+    
+    # Display chat messages from history on app rerun
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+    
+    # Accept user input
+    if prompt := st.chat_input("Type your message here..."):
+        # Add user message to chat history
+        st.session_state.messages.append({"role": "user", "content": prompt})
         
-        if st.form_submit_button("Send"):
-            if not prompt.strip():
-                st.warning("Please enter a message")
-                st.stop()
-            
-            with st.spinner(f"{MODEL_CONFIG[current_mode]['greeting'][0]} Sally is thinking..."):
+        # Display user message in chat message container
+        with st.chat_message("user"):
+            st.markdown(prompt)
+        
+        # Display assistant response in chat message container
+        with st.chat_message("assistant"):
+            with st.spinner("Thinking..."):
                 try:
-                    # Generate response
-                    config = models[current_mode]
-                    inputs = config["tokenizer"](
-                        prompt,
-                        return_tensors="pt",
-                        max_length=config["max_context"],
-                        truncation=True
-                    ).to(device)
+                    # Identify relevant categories
+                    relevant_categories = get_relevant_categories(prompt)
                     
-                    outputs = config["model"].generate(
-                        inputs.input_ids,
-                        max_length=config["max_length"],
-                        temperature=config["temperature"],
-                        pad_token_id=config["tokenizer"].eos_token_id if current_mode == "flirt" else None
+                    # Find best match from relevant categories
+                    matched_text = find_best_match(prompt, dataset, relevant_categories)
+                    
+                    # Fallback if no match found
+                    if not matched_text:
+                        fallbacks = [
+                            "That's interesting. What makes you say that?",
+                            "I'd love to know more about your perspective.",
+                            "That's a unique viewpoint. Tell me more.",
+                            "What do you think about that yourself?",
+                            "Could you elaborate on that?",
+                            "What's your take on this?",
+                            "That's something I haven't considered before. What brought this to mind?"
+                        ]
+                        matched_text = random.choice(fallbacks)
+                    
+                    # Add to history and ensure we don't repeat recent responses
+                    if matched_text in st.session_state.conversation_history:
+                        matched_text = find_best_match(prompt, dataset, relevant_categories) or random.choice(fallbacks)
+                    
+                    # Keep history of last 5 responses
+                    st.session_state.conversation_history.append(matched_text)
+                    if len(st.session_state.conversation_history) > 5:
+                        st.session_state.conversation_history.pop(0)
+                    
+                    # Create fluid response
+                    response = create_response(
+                        matched_text,
+                        paraphrase_model,
+                        qgen_model,
+                        qgen_tokenizer
                     )
                     
-                    response = config["tokenizer"].decode(outputs[0], skip_special_tokens=True)
-                    
-                    # Update conversation
-                    st.session_state.chat["messages"].extend([
-                        {"role": "user", "content": prompt},
-                        {"role": "assistant", "content": response, "mode": current_mode}
-                    ])
-                    st.session_state.chat["context"]["temporal_context"]["last_met"] = datetime.now()
-                    st.rerun()
-                    
+                    st.markdown(response)
+                    st.session_state.messages.append({"role": "assistant", "content": response})
+                
                 except Exception as e:
-                    st.error(f"Error generating response: {str(e)}")
+                    error_msg = "Hmm, let me think about that differently..."
+                    st.markdown(error_msg)
+                    st.session_state.messages.append({"role": "assistant", "content": error_msg})
+                    st.error(f"Error: {str(e)}")
 
 if __name__ == "__main__":
     main()
