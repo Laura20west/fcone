@@ -1,282 +1,494 @@
-import streamlit as st
-import json
-import random
-import re
-import numpy as np
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
-from transformers import pipeline, AutoModelForSeq2SeqLM, AutoTokenizer
 import os
+import io
+import streamlit as st
+import speech_recognition as sr
+from resemblyzer import VoiceEncoder, preprocess_wav
+from pathlib import Path
+import numpy as np
+import soundfile as sf
+import base64
+import sympy
+from sympy import symbols, solve, integrate, diff, limit, Eq, Derivative
+from sympy.parsing.sympy_parser import (parse_expr, standard_transformations,
+                                       implicit_multiplication_application)
+import re
+import math
+import numpy as np
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+import torch
 
-# Predefined keyword categories
-CATEGORY_KEYWORDS = {
-    "sex": ["fuck", "cock", "boobs", "pussy", "horny", "sex", "suck", "spank", 
-            "bondage", "threesome", "dick", "orgasm", "fucking", "nude", "naked",
-            "blowjob", "handjob", "anal", "fetish", "kink", "sexy", "erotic", "masturbation"],
-    "cars": ["car", "vehicle", "drive", "driving", "engine", "tire", "race", "speed",
-             "motor", "wheel", "road", "highway", "license", "driver", "automobile"],
-    "age": ["age", "old", "young", "birthday", "years", "aged", "elderly", "youth", 
-            "minor", "teen", "teenager", "adult", "senior", "centenarian"],
-    "hobbies": ["toy", "fun", "hobbies", "game", "play", "playing", "collect", 
-               "activity", "leisure", "pastime", "sport", "craft", "art", "music", "reading"],
-    "relationships": ["date", "dating", "partner", "boyfriend", "girlfriend", 
-                     "marriage", "marry", "crush", "love", "kiss", "romance",
-                     "affection", "commitment", "proposal", "engagement"]
-}
+# Initialize session state
+if 'conversation' not in st.session_state:
+    st.session_state.conversation = []
 
-# Load dataset preserving categories and content
-def load_dataset(file_path):
-    if not os.path.exists(file_path):
-        st.error(f"Dataset file not found: {file_path}")
-        return {}
-    
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        return data
-    except Exception as e:
-        st.error(f"Error loading dataset: {str(e)}")
-        return {}
+class VoiceAuthenticator:
+    def __init__(self, reference_voice_path="laura.wav", threshold=0.65):
+        self.encoder = VoiceEncoder()
+        self.threshold = threshold
 
-# Initialize models
-@st.cache_resource
-def initialize_models():
-    try:
-        paraphrase_model = pipeline(
-            "text2text-generation",
-            model="tuner007/pegasus_paraphrase",
-            device="cpu"
-        )
-        st.success("Paraphrase model loaded successfully")
-    except Exception as e:
-        st.error(f"Paraphrase model error: {str(e)}")
-        paraphrase_model = None
-    
-    try:
-        qgen_tokenizer = AutoTokenizer.from_pretrained("mrm8488/t5-base-finetuned-question-generation-ap")
-        qgen_model = AutoModelForSeq2SeqLM.from_pretrained("mrm8488/t5-base-finetuned-question-generation-ap")
-        st.success("Question generation model loaded successfully")
-    except Exception as e:
-        st.error(f"Question model error: {str(e)}")
-        qgen_model = None
-        qgen_tokenizer = None
-    
-    return paraphrase_model, qgen_model, qgen_tokenizer
+        if not Path(reference_voice_path).exists():
+            raise FileNotFoundError(f"Reference voice file not found: {reference_voice_path}")
+        self.reference_embed = self._get_embedding(reference_voice_path)
 
-# Identify relevant categories based on keywords
-def get_relevant_categories(user_input):
-    relevant_categories = set()
-    words = re.findall(r'\w+', user_input.lower())
-    
-    for word in words:
-        for category, keywords in CATEGORY_KEYWORDS.items():
-            if word in keywords:
-                relevant_categories.add(category)
-    
-    return relevant_categories
+    def _get_embedding(self, audio_path):
+        wav = preprocess_wav(audio_path)
+        return self.encoder.embed_utterance(wav)
 
-# Find best match within relevant categories with random selection
-def find_best_match(user_input, dataset, relevant_categories):
-    if not dataset:
+    def is_authorized_voice(self, audio_data):
+        try:
+            temp_path = "temp_voice_check.wav"
+            with open(temp_path, 'wb') as f:
+                f.write(audio_data)
+
+            test_embed = self._get_embedding(temp_path)
+            similarity = np.dot(self.reference_embed, test_embed)
+            st.info(f"Voice similarity score: {similarity:.3f}")
+
+            os.remove(temp_path)
+            return similarity > self.threshold
+
+        except Exception as e:
+            st.error(f"Voice authentication error: {str(e)}")
+            return False
+
+class AdvancedMathSolver:
+    def __init__(self):
+        self.transformations = (standard_transformations +
+                              (implicit_multiplication_application,))
+        self.x, self.y, self.z = symbols('x y z')
+        self.recognized_commands = {
+            'derivative': self._solve_derivative,
+            'integral': self._solve_integral,
+            'limit': self._solve_limit,
+            'area': self._solve_area,
+            'volume': self._solve_volume,
+            'mean': self._solve_mean,
+            'median': self._solve_median,
+            'determinant': self._solve_determinant,
+            'percentage': self._solve_percentage
+        }
+
+    def _extract_expression(self, text, keyword):
+        patterns = [
+            fr"{keyword}\s*(?:of|for)?\s*(.+?)\s*(?:with|when|where|if|$)",
+            fr"{keyword}\s*(.+?)\s*$"
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                return match.group(1).strip()
         return None
-    
-    # Get all candidates from relevant categories
-    candidates = []
-    for category in relevant_categories:
-        if category in dataset:
-            category_content = dataset[category]
-            responses = category_content.get('responses', [])
-            questions = category_content.get('questions', [])
-            
-            # Add all responses and questions from the category
-            candidates.extend(responses)
-            candidates.extend(questions)
-    
-    # If no candidates from relevant categories, use all categories
-    if not candidates:
-        for category, content in dataset.items():
-            responses = content.get('responses', [])
-            questions = content.get('questions', [])
-            candidates.extend(responses)
-            candidates.extend(questions)
-    
-    # Filter out empty candidates
-    candidates = [c.strip() for c in candidates if c.strip()]
-    
-    if not candidates:
-        return None
-    
-    # If we have many candidates, select a random subset for efficiency
-    max_candidates = 500
-    if len(candidates) > max_candidates:
-        candidates = random.sample(candidates, max_candidates)
-    
-    # Vectorize candidates
-    vectorizer = TfidfVectorizer(stop_words='english')
-    try:
-        tfidf_matrix = vectorizer.fit_transform(candidates)
-    except Exception as e:
-        st.error(f"Vectorization error: {str(e)}")
-        return None
-    
-    # Vectorize user input
-    try:
-        query_vec = vectorizer.transform([user_input])
-    except:
-        return random.choice(candidates)  # Fallback to random selection
-    
-    # Find best matches
-    try:
-        similarities = cosine_similarity(query_vec, tfidf_matrix).flatten()
-        # Get top 5 matches
-        top_indices = similarities.argsort()[-5:][::-1]
-        # Randomly select from top matches
-        selected_index = random.choice(top_indices)
-        return candidates[selected_index]
-    except:
-        return random.choice(candidates)  # Fallback to random selection
 
-# Paraphrase text
-def paraphrase_text(text, model):
-    if not model or not text.strip():
+    def _solve_basic(self, expr_str):
+        try:
+            if '%' in expr_str:
+                parts = expr_str.split('%')
+                if len(parts) == 2 and parts[1].strip() == '':
+                    value = parse_expr(parts[0], transformations=self.transformations)
+                    return float(value) / 100
+                elif 'of' in expr_str.lower():
+                    parts = expr_str.lower().split('% of')
+                    if len(parts) == 2:
+                        percent = parse_expr(parts[0], transformations=self.transformations)
+                        total = parse_expr(parts[1], transformations=self.transformations)
+                        return (float(percent) / 100) * float(total)
+
+            expr_str = expr_str.replace('÷', '/').replace(' over ', '/')
+            expr_str = expr_str.replace('^', '**').replace(' squared', '**2').replace(' cubed', '**3')
+            expr_str = re.sub(r'square root of (.+)', r'sqrt(\1)', expr_str, flags=re.IGNORECASE)
+
+            expr = parse_expr(expr_str, transformations=self.transformations)
+            result = float(expr.evalf())
+            return result
+        except Exception as e:
+            st.error(f"Basic solve error: {e}")
+            return None
+
+    def _solve_equation(self, equation_str):
+        try:
+            equation_str = equation_str.replace('=', '==')
+
+            if 'solve for' in equation_str.lower():
+                parts = equation_str.lower().split('solve for')
+                var = parts[1].strip()
+                equation = parts[0].strip()
+                symbol = symbols(var)
+                solutions = solve(equation, symbol)
+                return solutions
+
+            if '==' in equation_str:
+                parts = equation_str.split('==')
+                lhs = parse_expr(parts[0], transformations=self.transformations)
+                rhs = parse_expr(parts[1], transformations=self.transformations)
+                solutions = solve(Eq(lhs, rhs), self.x)
+                return solutions
+
+            return None
+        except Exception as e:
+            st.error(f"Equation solve error: {e}")
+            return None
+
+    def _solve_derivative(self, problem):
+        try:
+            expr_str = self._extract_expression(problem, 'derivative') or problem
+            expr_str = expr_str.replace('dy/dx', 'Derivative(y, x)').replace('dy', 'Derivative(y, x)')
+            expr = parse_expr(expr_str, transformations=self.transformations)
+            return diff(expr, self.x)
+        except Exception as e:
+            st.error(f"Derivative solve error: {e}")
+            return None
+
+    def _solve_integral(self, problem):
+        try:
+            expr_str = self._extract_expression(problem, 'integral') or problem
+            expr = parse_expr(expr_str, transformations=self.transformations)
+            return integrate(expr, self.x)
+        except Exception as e:
+            st.error(f"Integral solve error: {e}")
+            return None
+
+    def _solve_limit(self, problem):
+        try:
+            expr_str = self._extract_expression(problem, 'limit') or problem
+            var_str = re.search(r'as (.+?) approaches', problem, re.IGNORECASE)
+            val_str = re.search(r'approaches (.+)', problem, re.IGNORECASE)
+
+            if var_str and val_str:
+                var = parse_expr(var_str.group(1), transformations=self.transformations)
+                val = parse_expr(val_str.group(1), transformations=self.transformations)
+                expr = parse_expr(expr_str, transformations=self.transformations)
+                return limit(expr, var, val)
+            return None
+        except Exception as e:
+            st.error(f"Limit solve error: {e}")
+            return None
+
+    def _solve_area(self, problem):
+        try:
+            if 'circle' in problem.lower():
+                radius = re.search(r'radius\s*([0-9.]+)', problem, re.IGNORECASE)
+                if radius:
+                    r = float(radius.group(1))
+                    return math.pi * r**2
+
+            elif 'triangle' in problem.lower():
+                base = re.search(r'base\s*([0-9.]+)', problem, re.IGNORECASE)
+                height = re.search(r'height\s*([0-9.]+)', problem, re.IGNORECASE)
+                if base and height:
+                    b = float(base.group(1))
+                    h = float(height.group(1))
+                    return 0.5 * b * h
+
+            elif 'rectangle' in problem.lower():
+                length = re.search(r'length\s*([0-9.]+)', problem, re.IGNORECASE)
+                width = re.search(r'width\s*([0-9.]+)', problem, re.IGNORECASE)
+                if length and width:
+                    l = float(length.group(1))
+                    w = float(width.group(1))
+                    return l * w
+
+            return None
+        except Exception as e:
+            st.error(f"Area solve error: {e}")
+            return None
+
+    def _solve_volume(self, problem):
+        try:
+            if 'sphere' in problem.lower():
+                radius = re.search(r'radius\s*([0-9.]+)', problem, re.IGNORECASE)
+                if radius:
+                    r = float(radius.group(1))
+                    return (4/3) * math.pi * r**3
+
+            elif 'cylinder' in problem.lower():
+                radius = re.search(r'radius\s*([0-9.]+)', problem, re.IGNORECASE)
+                height = re.search(r'height\s*([0-9.]+)', problem, re.IGNORECASE)
+                if radius and height:
+                    r = float(radius.group(1))
+                    h = float(height.group(1))
+                    return math.pi * r**2 * h
+
+            elif 'cube' in problem.lower():
+                side = re.search(r'side\s*([0-9.]+)', problem, re.IGNORECASE)
+                if side:
+                    s = float(side.group(1))
+                    return s**3
+
+            return None
+        except Exception as e:
+            st.error(f"Volume solve error: {e}")
+            return None
+
+    def _solve_mean(self, problem):
+        try:
+            nums = re.findall(r'([0-9.]+)', problem)
+            if nums:
+                numbers = [float(n) for n in nums]
+                return np.mean(numbers)
+            return None
+        except Exception as e:
+            st.error(f"Mean solve error: {e}")
+            return None
+
+    def _solve_median(self, problem):
+        try:
+            nums = re.findall(r'([0-9.]+)', problem)
+            if nums:
+                numbers = [float(n) for n in nums]
+                return np.median(numbers)
+            return None
+        except Exception as e:
+            st.error(f"Median solve error: {e}")
+            return None
+
+    def _solve_determinant(self, problem):
+        try:
+            matrix_str = re.search(r'\[(.+)\]', problem)
+            if matrix_str:
+                rows = matrix_str.group(1).split(';')
+                matrix = []
+                for row in rows:
+                    elements = row.split(',')
+                    matrix.append([float(e.strip()) for e in elements])
+                mat = sympy.Matrix(matrix)
+                return mat.det()
+            return None
+        except Exception as e:
+            st.error(f"Determinant solve error: {e}")
+            return None
+
+    def _solve_percentage(self, problem):
+        try:
+            if '% of' in problem.lower():
+                parts = problem.lower().split('% of')
+                percent = float(parts[0].strip())
+                total = float(parts[1].strip())
+                return (percent / 100) * total
+            elif 'what is' in problem.lower() and '%' in problem.lower():
+                nums = re.findall(r'([0-9.]+)', problem)
+                if len(nums) == 2:
+                    percent = float(nums[0])
+                    total = float(nums[1])
+                    return (percent / 100) * total
+            return None
+        except Exception as e:
+            st.error(f"Percentage solve error: {e}")
+            return None
+
+    def solve(self, problem_text):
+        problem_text = problem_text.lower().strip()
+
+        for cmd, handler in self.recognized_commands.items():
+            if cmd in problem_text:
+                result = handler(problem_text)
+                if result is not None:
+                    return result
+
+        if '=' in problem_text or 'solve for' in problem_text:
+            result = self._solve_equation(problem_text)
+            if result is not None:
+                return result
+
+        result = self._solve_basic(problem_text)
+        if result is not None:
+            return result
+
+        return None
+
+class Xara2westSystem:
+    def __init__(self):
+        self.voice_auth = VoiceAuthenticator()
+        self.math_solver = AdvancedMathSolver()
+        self.model_name = "Xara2west/Xstage2"
+        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+        self.model = AutoModelForSeq2SeqLM.from_pretrained(self.model_name)
+        self.recognizer = sr.Recognizer()
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model.to(self.device)
+
+    def generate_response(self, input_text):
+        inputs = self.tokenizer.encode(input_text, return_tensors="pt").to(self.device)
+        outputs = self.model.generate(inputs, max_length=200, num_beams=5, early_stopping=True)
+        response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+        return self._apply_grammar_rules(response)
+
+    def _apply_grammar_rules(self, text):
+        if any(word in text.lower() for word in ['answer is', 'equals', 'solution', 'result']):
+            text = f"Babe, {text.lower().capitalize()} babe! good job math queen! 💡"
+        else:
+            text = text.replace(" the ", " thee ").replace(" a ", " an ")
+            text = text.capitalize()
+            if not text.startswith(("Babe,", "Darling,")):
+                text = f"Babe, {text} 🥺💕"
         return text
-    
-    try:
-        result = model(
-            f"paraphrase: {text}",
-            max_length=60,
-            num_beams=5,
-            num_return_sequences=1,
-            temperature=0.7
-        )
-        return result[0]['generated_text']
-    except Exception as e:
-        st.error(f"Paraphrase error: {str(e)}")
-        return text
 
-# Generate follow-up question
-def generate_question(context, model, tokenizer):
-    if not model or not context.strip():
-        return "What are your thoughts on that?"
-    
-    try:
-        inputs = tokenizer(
-            f"generate follow-up question: {context}",
-            return_tensors="pt",
-            max_length=512,
-            truncation=True
-        )
-        outputs = model.generate(
-            inputs.input_ids,
-            max_length=50,
-            num_beams=5,
-            early_stopping=True
-        )
-        return tokenizer.decode(outputs[0], skip_special_tokens=True)
-    except Exception as e:
-        st.error(f"Question generation error: {str(e)}")
-        return "What do you think about that?"
+    def solve_math_problem(self, problem_text):
+        clean_text = problem_text.lower()
+        for phrase in ["what is", "calculate", "solve for", "find the", "compute", "evaluate", "please"]:
+            clean_text = clean_text.replace(phrase, "")
+        clean_text = clean_text.strip()
 
-# Create fluid response with question
-def create_response(matched_text, paraphrase_model, qgen_model, qgen_tokenizer):
-    # Paraphrase the matched text
-    paraphrased = paraphrase_text(matched_text, paraphrase_model)
-    
-    # Generate follow-up question
-    follow_up = generate_question(matched_text, qgen_model, qgen_tokenizer)
-    
-    # Create seamless connection
-    connectors = [
-        "By the way,", "Actually,", "You know,", "Anyway,",
-        "Speaking of which,", "On that note,", "Curiously,",
-        "Incidentally,", "Interestingly,", "Changing topics slightly,",
-        "That reminds me,", "To shift gears a bit,"
-    ]
-    
-    # Randomly decide connection style
-    if random.random() > 0.4:  # 60% chance to use connector
-        return f"{paraphrased} {random.choice(connectors)} {follow_up}"
-    return f"{paraphrased} {follow_up}"
+        solution = self.math_solver.solve(clean_text)
 
-# Main Streamlit app
+        if solution is not None:
+            if isinstance(solution, list):
+                if len(solution) == 1:
+                    solution = solution[0]
+                else:
+                    solution = ", ".join(str(s) for s in solution)
+            return f"Thee solution is: {solution}"
+        else:
+            return "I couldn't solve that math problem, babe. Can you try rephrasing it?"
+
+    def process_query(self, user_input):
+        math_keywords = [
+            'calculate', 'solve', 'math', 'equation', 'formula',
+            'derivative', 'integral', 'limit', 'matrix', 'determinant',
+            'area', 'volume', 'mean', 'median', 'standard deviation',
+            '+', '-', '*', '/', '^', 'plus', 'minus', 'times', 'divided by',
+            'add', 'subtract', 'multiply', 'divide', 'power', 'root',
+            'what is', 'how much is', '%', 'percent', 'percentage'
+        ]
+
+        if any(keyword in user_input.lower() for keyword in math_keywords):
+            return self.solve_math_problem(user_input)
+        return self.generate_response(user_input)
+
+    def process_voice_command(self, audio_data):
+        if self.voice_auth.is_authorized_voice(audio_data):
+            text_input = self._speech_to_text(audio_data)
+
+            if text_input:
+                st.info(f"Recognized command: {text_input}")
+                response = self.process_query(text_input)
+
+                if text_input.lower().startswith("execute "):
+                    command = text_input[8:]
+                    try:
+                        output = os.popen(command).read()
+                        return f"Command executed:\n{output}"
+                    except Exception as e:
+                        return f"Failed to execute command: {str(e)}"
+
+                return response
+            else:
+                return "Could not understand voice command."
+        else:
+            return "❌ Voice not recognized. Command ignored."
+
+    def _speech_to_text(self, audio_data):
+        try:
+            temp_path = "temp_voice_command.wav"
+            with open(temp_path, 'wb') as f:
+                f.write(audio_data)
+
+            with sr.AudioFile(temp_path) as source:
+                audio = self.recognizer.record(source)
+                text = self.recognizer.recognize_google(audio)
+
+            os.remove(temp_path)
+            return text
+        except sr.UnknownValueError:
+            st.error("Google Speech Recognition could not understand audio")
+            return None
+        except sr.RequestError as e:
+            st.error(f"Could not request results from Google Speech Recognition service; {e}")
+            return None
+        except Exception as e:
+            st.error(f"Speech recognition error: {e}")
+            return None
+
+def autoplay_audio(file_path: str):
+    with open(file_path, "rb") as f:
+        data = f.read()
+        b64 = base64.b64encode(data).decode()
+        md = f"""
+            <audio controls autoplay="true">
+            <source src="data:audio/wav;base64,{b64}" type="audio/wav">
+            </audio>
+            """
+        st.markdown(
+            md,
+            unsafe_allow_html=True,
+        )
+
 def main():
-    st.title("🤖 Advanced Chatbot")
-    st.write("This chatbot uses NLP models to generate intelligent responses.")
+    st.title("Xara2west System")
+    st.markdown("A voice-authenticated math solver and chatbot with personality")
+
+    # Initialize system
+    if 'system' not in st.session_state:
+        st.session_state.system = Xara2westSystem()
+
+    # Conversation display
+    st.subheader("Conversation")
+    conversation_container = st.container()
     
-    # Initialize models and dataset
-    with st.spinner("Loading models and dataset..."):
-        dataset = load_dataset("cone03.txt")
-        paraphrase_model, qgen_model, qgen_tokenizer = initialize_models()
-    
-    # Initialize chat history
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-        st.session_state.conversation_history = []
-        # Add initial greeting
-        st.session_state.messages.append({"role": "assistant", "content": "Hey there! What's on your mind?"})
-    
-    # Display chat messages from history on app rerun
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-    
-    # Accept user input
-    if prompt := st.chat_input("Type your message here..."):
-        # Add user message to chat history
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        
-        # Display user message in chat message container
-        with st.chat_message("user"):
-            st.markdown(prompt)
-        
-        # Display assistant response in chat message container
-        with st.chat_message("assistant"):
-            with st.spinner("Thinking..."):
-                try:
-                    # Identify relevant categories
-                    relevant_categories = get_relevant_categories(prompt)
-                    
-                    # Find best match from relevant categories
-                    matched_text = find_best_match(prompt, dataset, relevant_categories)
-                    
-                    # Fallback if no match found
-                    if not matched_text:
-                        fallbacks = [
-                            "That's interesting. What makes you say that?",
-                            "I'd love to know more about your perspective.",
-                            "That's a unique viewpoint. Tell me more.",
-                            "What do you think about that yourself?",
-                            "Could you elaborate on that?",
-                            "What's your take on this?",
-                            "That's something I haven't considered before. What brought this to mind?"
-                        ]
-                        matched_text = random.choice(fallbacks)
-                    
-                    # Add to history and ensure we don't repeat recent responses
-                    if matched_text in st.session_state.conversation_history:
-                        matched_text = find_best_match(prompt, dataset, relevant_categories) or random.choice(fallbacks)
-                    
-                    # Keep history of last 5 responses
-                    st.session_state.conversation_history.append(matched_text)
-                    if len(st.session_state.conversation_history) > 5:
-                        st.session_state.conversation_history.pop(0)
-                    
-                    # Create fluid response
-                    response = create_response(
-                        matched_text,
-                        paraphrase_model,
-                        qgen_model,
-                        qgen_tokenizer
-                    )
-                    
-                    st.markdown(response)
-                    st.session_state.messages.append({"role": "assistant", "content": response})
+    # Input methods
+    st.subheader("Input Method")
+    input_method = st.radio("Choose input method:", ("Text", "Microphone", "Upload Audio"))
+
+    if input_method == "Text":
+        user_input = st.text_input("Type your message here:")
+        if st.button("Send") and user_input:
+            st.session_state.conversation.append(("You", user_input))
+            response = st.session_state.system.process_query(user_input)
+            st.session_state.conversation.append(("Xara2west", response))
+
+    elif input_method == "Microphone":
+        if st.button("Start Recording"):
+            with st.spinner("Listening... Speak now!"):
+                recognizer = sr.Recognizer()
+                microphone = sr.Microphone()
                 
-                except Exception as e:
-                    error_msg = "Hmm, let me think about that differently..."
-                    st.markdown(error_msg)
-                    st.session_state.messages.append({"role": "assistant", "content": error_msg})
-                    st.error(f"Error: {str(e)}")
+                with microphone as source:
+                    recognizer.adjust_for_ambient_noise(source)
+                    audio = recognizer.listen(source, timeout=5, phrase_time_limit=10)
+                    
+                    audio_data = io.BytesIO()
+                    audio_data.write(audio.get_wav_data())
+                    audio_data.seek(0)
+                    
+                    # Save to temp file for playback
+                    temp_path = "temp_voice_input.wav"
+                    with open(temp_path, 'wb') as f:
+                        f.write(audio_data.read())
+                    
+                    # Add to conversation
+                    st.session_state.conversation.append(("You", "[Voice Message]"))
+                    autoplay_audio(temp_path)
+                    
+                    # Process voice command
+                    audio_data.seek(0)
+                    response = st.session_state.system.process_voice_command(audio_data.read())
+                    st.session_state.conversation.append(("Xara2west", response))
+
+    elif input_method == "Upload Audio":
+        uploaded_file = st.file_uploader("Choose a WAV audio file", type="wav")
+        if uploaded_file is not None:
+            audio_data = uploaded_file.read()
+            
+            # Save to temp file for playback
+            temp_path = "temp_uploaded_audio.wav"
+            with open(temp_path, 'wb') as f:
+                f.write(audio_data)
+            
+            # Add to conversation
+            st.session_state.conversation.append(("You", f"[Uploaded Audio: {uploaded_file.name}]"))
+            autoplay_audio(temp_path)
+            
+            # Process voice command
+            response = st.session_state.system.process_voice_command(audio_data)
+            st.session_state.conversation.append(("Xara2west", response))
+
+    # Display conversation
+    with conversation_container:
+        for speaker, message in st.session_state.conversation:
+            if speaker == "You":
+                st.markdown(f"**{speaker}:** {message}")
+            else:
+                st.markdown(f"*{speaker}:* {message}")
 
 if __name__ == "__main__":
     main()
