@@ -6,3 +6,4 @@ sympy>=1.11.1
 numpy>=1.23.5
 transformers>=4.30.2
 torch>=2.0.1
+pyaudio
