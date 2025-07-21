@@ -1,33 +1,42 @@
 import os
 import io
-import streamlit as st
-import speech_recognition as sr
-from resemblyzer import VoiceEncoder, preprocess_wav
-from pathlib import Path
-import numpy as np
-import soundfile as sf
 import base64
+import streamlit as st
+from streamlit_webrtc import webrtc_streamer, WebRtcMode, ClientSettings
+import av
+import numpy as np
+from pathlib import Path
+import soundfile as sf
 import sympy
 from sympy import symbols, solve, integrate, diff, limit, Eq, Derivative
 from sympy.parsing.sympy_parser import (parse_expr, standard_transformations,
                                        implicit_multiplication_application)
 import re
 import math
-import numpy as np
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 import torch
 
 # Initialize session state
 if 'conversation' not in st.session_state:
     st.session_state.conversation = []
+if 'audio_buffer' not in st.session_state:
+    st.session_state.audio_buffer = io.BytesIO()
+
+# WebRTC configuration
+WEBRTC_CLIENT_SETTINGS = ClientSettings(
+    rtc_configuration={
+        "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
+    },
+    media_stream_constraints={
+        "audio": True,
+        "video": False
+    },
+)
 
 class VoiceAuthenticator:
     def __init__(self, reference_voice_path="laura.wav", threshold=0.65):
         self.encoder = VoiceEncoder()
         self.threshold = threshold
-
-        if not Path(reference_voice_path).exists():
-            raise FileNotFoundError(f"Reference voice file not found: {reference_voice_path}")
         self.reference_embed = self._get_embedding(reference_voice_path)
 
     def _get_embedding(self, audio_path):
@@ -42,13 +51,12 @@ class VoiceAuthenticator:
 
             test_embed = self._get_embedding(temp_path)
             similarity = np.dot(self.reference_embed, test_embed)
-            st.info(f"Voice similarity score: {similarity:.3f}")
+            st.session_state.conversation.append(("System", f"Voice similarity score: {similarity:.3f}"))
 
             os.remove(temp_path)
             return similarity > self.threshold
-
         except Exception as e:
-            st.error(f"Voice authentication error: {str(e)}")
+            st.session_state.conversation.append(("System", f"Voice authentication error: {str(e)}"))
             return False
 
 class AdvancedMathSolver:
@@ -102,7 +110,7 @@ class AdvancedMathSolver:
             result = float(expr.evalf())
             return result
         except Exception as e:
-            st.error(f"Basic solve error: {e}")
+            st.session_state.conversation.append(("System", f"Basic solve error: {e}"))
             return None
 
     def _solve_equation(self, equation_str):
@@ -126,7 +134,7 @@ class AdvancedMathSolver:
 
             return None
         except Exception as e:
-            st.error(f"Equation solve error: {e}")
+            st.session_state.conversation.append(("System", f"Equation solve error: {e}"))
             return None
 
     def _solve_derivative(self, problem):
@@ -136,7 +144,7 @@ class AdvancedMathSolver:
             expr = parse_expr(expr_str, transformations=self.transformations)
             return diff(expr, self.x)
         except Exception as e:
-            st.error(f"Derivative solve error: {e}")
+            st.session_state.conversation.append(("System", f"Derivative solve error: {e}"))
             return None
 
     def _solve_integral(self, problem):
@@ -145,7 +153,7 @@ class AdvancedMathSolver:
             expr = parse_expr(expr_str, transformations=self.transformations)
             return integrate(expr, self.x)
         except Exception as e:
-            st.error(f"Integral solve error: {e}")
+            st.session_state.conversation.append(("System", f"Integral solve error: {e}"))
             return None
 
     def _solve_limit(self, problem):
@@ -161,7 +169,7 @@ class AdvancedMathSolver:
                 return limit(expr, var, val)
             return None
         except Exception as e:
-            st.error(f"Limit solve error: {e}")
+            st.session_state.conversation.append(("System", f"Limit solve error: {e}"))
             return None
 
     def _solve_area(self, problem):
@@ -190,7 +198,7 @@ class AdvancedMathSolver:
 
             return None
         except Exception as e:
-            st.error(f"Area solve error: {e}")
+            st.session_state.conversation.append(("System", f"Area solve error: {e}"))
             return None
 
     def _solve_volume(self, problem):
@@ -217,7 +225,7 @@ class AdvancedMathSolver:
 
             return None
         except Exception as e:
-            st.error(f"Volume solve error: {e}")
+            st.session_state.conversation.append(("System", f"Volume solve error: {e}"))
             return None
 
     def _solve_mean(self, problem):
@@ -228,7 +236,7 @@ class AdvancedMathSolver:
                 return np.mean(numbers)
             return None
         except Exception as e:
-            st.error(f"Mean solve error: {e}")
+            st.session_state.conversation.append(("System", f"Mean solve error: {e}"))
             return None
 
     def _solve_median(self, problem):
@@ -239,7 +247,7 @@ class AdvancedMathSolver:
                 return np.median(numbers)
             return None
         except Exception as e:
-            st.error(f"Median solve error: {e}")
+            st.session_state.conversation.append(("System", f"Median solve error: {e}"))
             return None
 
     def _solve_determinant(self, problem):
@@ -255,7 +263,7 @@ class AdvancedMathSolver:
                 return mat.det()
             return None
         except Exception as e:
-            st.error(f"Determinant solve error: {e}")
+            st.session_state.conversation.append(("System", f"Determinant solve error: {e}"))
             return None
 
     def _solve_percentage(self, problem):
@@ -273,7 +281,7 @@ class AdvancedMathSolver:
                     return (percent / 100) * total
             return None
         except Exception as e:
-            st.error(f"Percentage solve error: {e}")
+            st.session_state.conversation.append(("System", f"Percentage solve error: {e}"))
             return None
 
     def solve(self, problem_text):
@@ -303,7 +311,6 @@ class Xara2westSystem:
         self.model_name = "Xara2west/Xstage2"
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
         self.model = AutoModelForSeq2SeqLM.from_pretrained(self.model_name)
-        self.recognizer = sr.Recognizer()
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
 
@@ -360,7 +367,7 @@ class Xara2westSystem:
             text_input = self._speech_to_text(audio_data)
 
             if text_input:
-                st.info(f"Recognized command: {text_input}")
+                st.session_state.conversation.append(("System", f"Recognized command: {text_input}"))
                 response = self.process_query(text_input)
 
                 if text_input.lower().startswith("execute "):
@@ -383,21 +390,27 @@ class Xara2westSystem:
             with open(temp_path, 'wb') as f:
                 f.write(audio_data)
 
+            recognizer = sr.Recognizer()
             with sr.AudioFile(temp_path) as source:
-                audio = self.recognizer.record(source)
-                text = self.recognizer.recognize_google(audio)
+                audio = recognizer.record(source)
+                text = recognizer.recognize_google(audio)
 
             os.remove(temp_path)
             return text
         except sr.UnknownValueError:
-            st.error("Google Speech Recognition could not understand audio")
+            st.session_state.conversation.append(("System", "Google Speech Recognition could not understand audio"))
             return None
         except sr.RequestError as e:
-            st.error(f"Could not request results from Google Speech Recognition service; {e}")
+            st.session_state.conversation.append(("System", f"Could not request results from Google Speech Recognition service; {e}"))
             return None
         except Exception as e:
-            st.error(f"Speech recognition error: {e}")
+            st.session_state.conversation.append(("System", f"Speech recognition error: {e}"))
             return None
+
+def audio_frame_callback(frame: av.AudioFrame) -> av.AudioFrame:
+    if st.session_state.audio_buffer:
+        st.session_state.audio_buffer.write(frame.to_ndarray().tobytes())
+    return frame
 
 def autoplay_audio(file_path: str):
     with open(file_path, "rb") as f:
@@ -414,8 +427,8 @@ def autoplay_audio(file_path: str):
         )
 
 def main():
-    st.title("Xara2west System")
-    st.markdown("A voice-authenticated math solver and chatbot with personality")
+    st.title("Xara2west Voice-Authenticated Math Assistant")
+    st.markdown("Speak or type your math problems and get personalized help!")
 
     # Initialize system
     if 'system' not in st.session_state:
@@ -437,32 +450,33 @@ def main():
             st.session_state.conversation.append(("Xara2west", response))
 
     elif input_method == "Microphone":
-        if st.button("Start Recording"):
-            with st.spinner("Listening... Speak now!"):
-                recognizer = sr.Recognizer()
-                microphone = sr.Microphone()
-                
-                with microphone as source:
-                    recognizer.adjust_for_ambient_noise(source)
-                    audio = recognizer.listen(source, timeout=5, phrase_time_limit=10)
-                    
-                    audio_data = io.BytesIO()
-                    audio_data.write(audio.get_wav_data())
-                    audio_data.seek(0)
-                    
-                    # Save to temp file for playback
-                    temp_path = "temp_voice_input.wav"
-                    with open(temp_path, 'wb') as f:
-                        f.write(audio_data.read())
-                    
-                    # Add to conversation
-                    st.session_state.conversation.append(("You", "[Voice Message]"))
-                    autoplay_audio(temp_path)
-                    
-                    # Process voice command
-                    audio_data.seek(0)
-                    response = st.session_state.system.process_voice_command(audio_data.read())
-                    st.session_state.conversation.append(("Xara2west", response))
+        st.write("Click 'Start Recording' and speak your math problem:")
+        
+        webrtc_ctx = webrtc_streamer(
+            key="voice-auth",
+            mode=WebRtcMode.SENDONLY,
+            client_settings=WEBRTC_CLIENT_SETTINGS,
+            audio_frame_callback=audio_frame_callback,
+            rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
+            media_stream_constraints={"audio": True},
+        )
+
+        if st.button("Process Recording") and st.session_state.audio_buffer:
+            # Save audio to file for playback
+            temp_path = "temp_voice_input.wav"
+            with open(temp_path, 'wb') as f:
+                f.write(st.session_state.audio_buffer.getvalue())
+            
+            # Add to conversation
+            st.session_state.conversation.append(("You", "[Voice Message]"))
+            autoplay_audio(temp_path)
+            
+            # Process voice command
+            response = st.session_state.system.process_voice_command(st.session_state.audio_buffer.getvalue())
+            st.session_state.conversation.append(("Xara2west", response))
+            
+            # Reset buffer
+            st.session_state.audio_buffer = io.BytesIO()
 
     elif input_method == "Upload Audio":
         uploaded_file = st.file_uploader("Choose a WAV audio file", type="wav")
@@ -476,19 +490,4 @@ def main():
             
             # Add to conversation
             st.session_state.conversation.append(("You", f"[Uploaded Audio: {uploaded_file.name}]"))
-            autoplay_audio(temp_path)
             
-            # Process voice command
-            response = st.session_state.system.process_voice_command(audio_data)
-            st.session_state.conversation.append(("Xara2west", response))
-
-    # Display conversation
-    with conversation_container:
-        for speaker, message in st.session_state.conversation:
-            if speaker == "You":
-                st.markdown(f"**{speaker}:** {message}")
-            else:
-                st.markdown(f"*{speaker}:* {message}")
-
-if __name__ == "__main__":
-    main()
