@@ -1,4 +1,4 @@
-!pip install -q transformers torch sentencepiece streamlit speech_recognition resemblyzer sympy soundfile
+
 
 import os
 import io
