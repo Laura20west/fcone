@@ -241,7 +241,7 @@ class IntegratedSystem:
                 return text
                 
             params = {
-                'max_new_tokens': min(100, len(text.split()) + 20,
+                'max_new_tokens': min(100, len(text.split()) + 20),
                 'temperature': 0.3,
                 'repetition_penalty': 1.8,
                 'no_repeat_ngram_size': 3
