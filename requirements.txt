@@ -7,3 +7,4 @@ numpy>=1.23.5
 transformers>=4.30.2
 torch>=2.0.1
 regex>=2023.12.0
+sentencepiece 
